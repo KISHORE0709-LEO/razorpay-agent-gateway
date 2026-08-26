@@ -16,15 +16,10 @@ export default function Landing() {
             Sentry<span className="text-brand-blue">Pay</span>
           </span>
         </div>
-        <Link
-          to="/login"
-          className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm font-medium text-white/90 transition hover:bg-white/10"
-        >
-          Enter Dashboard
-        </Link>
+        <div className="hidden items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] p-1 md:flex"><a href="#how-it-works" className="rounded-full px-3 py-1.5 text-xs text-white/60 transition hover:bg-white/10 hover:text-white">How it works</a><a href="#security" className="rounded-full px-3 py-1.5 text-xs text-white/60 transition hover:bg-white/10 hover:text-white">Security</a><Link to="/login" className="rounded-full bg-brand-blue px-4 py-1.5 text-xs font-semibold text-white transition hover:brightness-110">Enter Dashboard</Link></div>
       </header>
 
-      <main className="relative z-10 mx-auto grid max-w-7xl grid-cols-1 items-center gap-16 px-6 py-12 sm:px-10 lg:grid-cols-2 lg:py-20">
+      <main id="how-it-works" className="relative z-10 mx-auto grid max-w-7xl grid-cols-1 items-center gap-16 px-6 py-12 sm:px-10 lg:grid-cols-2 lg:py-20">
         <div>
           <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-white/70">
             <Sparkles className="h-3.5 w-3.5 text-brand-blue" />
@@ -81,7 +76,7 @@ export default function Landing() {
         </div>
       </main>
 
-      <footer className="relative z-10 border-t border-white/10 px-6 py-6 text-center text-xs text-white/40 sm:px-10">
+      <footer id="security" className="relative z-10 border-t border-white/10 px-6 py-6 text-center text-xs text-white/40 sm:px-10">
         Built for AI agents that spend real money — safely.
       </footer>
     </div>

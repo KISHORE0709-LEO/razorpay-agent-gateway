@@ -69,6 +69,7 @@ export default function Login() {
               Log in to dashboard
               <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
             </button>
+            <div className="flex items-center justify-between text-xs"><Link to="/forgot-password" className="text-white/45 hover:text-brand-blue">Forgot password?</Link><Link to="/signup" className="font-semibold text-brand-blue hover:underline">Create account</Link></div>
           </form>
 
           <p className="mt-6 text-center text-[11px] leading-relaxed text-white/35">
