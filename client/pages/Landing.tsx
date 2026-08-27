@@ -16,7 +16,7 @@ export default function Landing() {
             Sentry<span className="text-brand-blue">Pay</span>
           </span>
         </div>
-        <div className="hidden items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] p-1 md:flex"><a href="#how-it-works" className="rounded-full px-3 py-1.5 text-xs text-white/60 transition hover:bg-white/10 hover:text-white">How it works</a><a href="#security" className="rounded-full px-3 py-1.5 text-xs text-white/60 transition hover:bg-white/10 hover:text-white">Security</a><Link to="/login" className="rounded-full bg-brand-blue px-4 py-1.5 text-xs font-semibold text-white transition hover:brightness-110">Enter Dashboard</Link></div>
+        <nav className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] p-1 md:flex"><Link to="/" className="rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium text-white">Home</Link><Link to="/how-it-works" className="rounded-full px-3 py-1.5 text-xs text-white/60 transition hover:bg-white/10 hover:text-white">How it works</Link><Link to="/security" className="rounded-full px-3 py-1.5 text-xs text-white/60 transition hover:bg-white/10 hover:text-white">Security</Link></nav>
       </header>
 
       <main id="how-it-works" className="relative z-10 mx-auto grid max-w-7xl grid-cols-1 items-center gap-16 px-6 py-12 sm:px-10 lg:grid-cols-2 lg:py-20">
