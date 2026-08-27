@@ -63,8 +63,8 @@ interface FirewallStore {
 const FirewallContext = createContext<FirewallStore | null>(null);
 
 export function FirewallProvider({ children }: { children: ReactNode }) {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [merchantEmail, setMerchantEmail] = useState<string | null>(null);
+  const [isLoggedIn, setIsLoggedIn] = useState(() => sessionStorage.getItem("sentrypay-session") === "active");
+  const [merchantEmail, setMerchantEmail] = useState<string | null>(() => sessionStorage.getItem("sentrypay-email"));
   const [rules, setRules] = useState<Rules>(DEFAULT_RULES);
   const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
   const [approvals, setApprovals] = useState<ApprovalItem[]>([]);
@@ -85,11 +85,15 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
   dailySpentRef.current = dailySpent;
 
   const login = useCallback((email: string) => {
+    sessionStorage.setItem("sentrypay-session", "active");
+    sessionStorage.setItem("sentrypay-email", email);
     setMerchantEmail(email);
     setIsLoggedIn(true);
   }, []);
 
   const logout = useCallback(() => {
+    sessionStorage.removeItem("sentrypay-session");
+    sessionStorage.removeItem("sentrypay-email");
     setIsLoggedIn(false);
     setMerchantEmail(null);
   }, []);

@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Activity,
@@ -46,10 +46,11 @@ export default function Dashboard() {
   const [tab, setTab] = useState<Tab>("overview");
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  if (!isLoggedIn) {
-    navigate("/login");
-    return null;
-  }
+  useEffect(() => {
+    if (!isLoggedIn) navigate("/login");
+  }, [isLoggedIn, navigate]);
+
+  if (!isLoggedIn) return null;
 
   function signOut() {
     logout();
