@@ -59,7 +59,7 @@ interface FirewallStore {
   approvals: ApprovalItem[];
   dailySpent: number;
 
-  submitRequest: (product: Product) => SubmitResult;
+  submitRequest: (product: Product) => Promise<SubmitResult>;
   resolveApproval: (id: string, approve: boolean) => SubmitResult | undefined;
 }
 
@@ -144,58 +144,103 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
   );
 
   const submitRequest = useCallback(
-    (product: Product): SubmitResult => {
-      const result = evaluateRequest(
-        product,
-        rulesRef.current,
-        dailySpentRef.current,
-      );
-
-      if (result.decision === "approved") {
-        const entry = appendAuditEntry(product, "approved", result.reason);
-        return { ...result, entry };
-      }
-
-      if (result.decision === "blocked") {
-        const entry = appendAuditEntry(product, "blocked", result.reason);
-        return { ...result, entry };
-      }
-
-      if (result.decision === "escalated") {
-        const approval: ApprovalItem = {
-          id: `apr_${Math.random().toString(36).slice(2, 10)}`,
-          time: new Date().toISOString(),
-          agent: AGENT_ID,
-          product,
-          amount: product.price,
+    async (product: Product): Promise<SubmitResult> => {
+      try {
+        const response = await fetch("/api/evaluate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            merchantId: "demo_merchant",
+            agentId: AGENT_ID,
+            productId: product.id,
+            requestedAmount: product.price,
+          }),
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || `HTTP error ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        const mappedResult: SubmitResult = {
+          decision: result.decision,
           reason: result.reason,
+          alternative: result.recoveryProduct,
         };
-        setApprovals((list) => [approval, ...list]);
-        return { ...result, approval };
-      }
 
-      // recovered: no side effects yet, chat surfaces an accept/decline card.
-      return result;
+        if (result.decision === "approved") {
+          const entry = appendAuditEntry(product, "approved", result.reason);
+          return { ...mappedResult, entry };
+        }
+
+        if (result.decision === "blocked") {
+          const entry = appendAuditEntry(product, "blocked", result.reason);
+          return { ...mappedResult, entry };
+        }
+
+        if (result.decision === "escalated") {
+          const approval: ApprovalItem = {
+            id: `apr_${Math.random().toString(36).slice(2, 10)}`,
+            time: new Date().toISOString(),
+            agent: AGENT_ID,
+            product,
+            amount: product.price,
+            reason: result.reason,
+          };
+          setApprovals((list) => [approval, ...list]);
+          return { ...mappedResult, approval };
+        }
+
+        return mappedResult;
+      } catch (err) {
+        console.error(err);
+        return { decision: "blocked", reason: "Error connecting to firewall" };
+      }
     },
     [appendAuditEntry],
   );
 
   const resolveApproval = useCallback(
-    (id: string, approve: boolean): SubmitResult | undefined => {
+    async (id: string, approve: boolean): Promise<SubmitResult | undefined> => {
       const item = approvals.find((a) => a.id === id);
       if (!item) return undefined;
       setApprovals((list) => list.filter((a) => a.id !== id));
 
-      if (approve) {
-        const entry = appendAuditEntry(item.product, "approved", "Approved by merchant");
-        return { decision: "approved", reason: "Approved by merchant", entry };
+      const decision = approve ? "approved" : "blocked";
+      try {
+        const response = await fetch("/api/evaluate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            merchantId: "demo_merchant",
+            agentId: AGENT_ID,
+            productId: item.product.id,
+            requestedAmount: item.product.price,
+            overrideDecision: decision
+          }),
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || `HTTP error ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        const mappedResult: SubmitResult = {
+          decision: result.decision,
+          reason: result.reason,
+        };
+
+        const entry = appendAuditEntry(item.product, mappedResult.decision, mappedResult.reason);
+        return { ...mappedResult, entry };
+      } catch (err) {
+        console.error("Error resolving approval:", err);
+        const entry = appendAuditEntry(item.product, "blocked", "Error connecting to firewall");
+        return { decision: "blocked", reason: "Error connecting to firewall", entry };
       }
-      const entry = appendAuditEntry(
-        item.product,
-        "blocked",
-        "Manually denied by merchant",
-      );
-      return { decision: "blocked", reason: "Manually denied by merchant", entry };
     },
     [approvals, appendAuditEntry],
   );
