@@ -1,5 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { db } from "@/lib/firebase";
+import { doc, setDoc } from "firebase/firestore";
 import {
   Activity,
   ArrowDownRight,
@@ -60,16 +62,19 @@ export default function Dashboard() {
   return (
     <div className="flex min-h-screen bg-background text-foreground">
       <aside className={cn("fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r border-white/10 bg-brand-navy text-white shadow-2xl shadow-brand-navy/30 transition-transform duration-300 ease-out", sidebarOpen ? "translate-x-0" : "-translate-x-full")}>
-        <div className="flex h-20 items-center gap-2 border-b border-white/10 px-6">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-blue"><ShieldCheck className="h-4 w-4" /></div>
-          <span className="font-semibold tracking-tight">Sentry<span className="text-brand-blue">Pay</span></span>
+        <div className="flex h-20 items-center justify-between border-b border-white/10 px-6">
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-blue"><ShieldCheck className="h-4 w-4" /></div>
+            <span className="font-semibold tracking-tight">Sentry<span className="text-brand-blue">Pay</span></span>
+          </div>
+          <button onClick={() => setSidebarOpen(false)} className="rounded-lg p-1.5 text-white/50 hover:bg-white/10 hover:text-white transition" aria-label="Close sidebar"><X className="h-4 w-4" /></button>
         </div>
         <div className="px-4 py-6">
           <div className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/35">Workspace</div>
           <nav className="space-y-1">
             {NAV.map((item) => {
               const Icon = item.icon;
-              return <button key={item.id} onClick={() => { setTab(item.id); setSidebarOpen(false); }} className={cn("flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition", tab === item.id ? "bg-brand-blue text-white shadow-lg shadow-brand-blue/15" : "text-white/55 hover:bg-white/5 hover:text-white")}><Icon className="h-4 w-4 shrink-0" />{item.label}{item.id === "approvals" && <ApprovalCount />}</button>;
+              return <button key={item.id} onClick={() => setTab(item.id)} className={cn("flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition", tab === item.id ? "bg-brand-blue text-white shadow-lg shadow-brand-blue/15" : "text-white/55 hover:bg-white/5 hover:text-white")}><Icon className="h-4 w-4 shrink-0" />{item.label}{item.id === "approvals" && <ApprovalCount />}</button>;
             })}
           </nav>
         </div>
@@ -78,11 +83,9 @@ export default function Dashboard() {
           <button onClick={signOut} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-white/45 transition hover:bg-white/5 hover:text-white"><LogOut className="h-4 w-4" />Sign out</button>
         </div>
       </aside>
-      {sidebarOpen && <button aria-label="Close navigation" onClick={() => setSidebarOpen(false)} className="fixed inset-0 z-30 bg-brand-navy/35 backdrop-blur-[2px]" />}
-
-      <div className="min-w-0 flex-1">
+      <div className={cn("min-w-0 flex-1 transition-[padding] duration-300 ease-out", sidebarOpen ? "pl-72" : "pl-0")}>
         <header className="flex h-20 items-center justify-between border-b border-border bg-card px-5 sm:px-8">
-          <div className="flex items-center gap-3"><div className="flex items-center gap-1"><button onClick={() => setSidebarOpen((open) => !open)} className="rounded-lg p-2 text-muted-foreground transition hover:bg-muted hover:text-brand-navy" title={sidebarOpen ? "Close sidebar" : "Open sidebar"}><PanelLeft className="h-4 w-4" /></button></div><div><div className="text-xs text-muted-foreground">Merchant workspace /</div><h1 className="text-lg font-semibold capitalize">{tab === "chat" ? "AI Buyer" : tab === "rules" ? "Firewall Rules" : tab === "audit" ? "Audit Trail" : tab === "approvals" ? "Approval Queue" : "Overview"}</h1></div></div>
+          <div className="flex items-center gap-3"><div className="flex items-center gap-1"><button onClick={() => setSidebarOpen((open) => !open)} className="rounded-lg p-2 text-muted-foreground transition hover:bg-muted hover:text-brand-navy" title={sidebarOpen ? "Close sidebar" : "Open sidebar"}><Menu className="h-4 w-4" /></button></div><div><div className="text-xs text-muted-foreground">Merchant workspace /</div><h1 className="text-lg font-semibold capitalize">{tab === "chat" ? "AI Buyer" : tab === "rules" ? "Firewall Rules" : tab === "audit" ? "Audit Trail" : tab === "approvals" ? "Approval Queue" : "Overview"}</h1></div></div>
           <div className="flex items-center gap-3"><div className="hidden items-center gap-2 rounded-full border border-success/20 bg-success/10 px-3 py-1.5 text-xs font-medium text-success sm:flex"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-success" />System operational</div><div className="h-8 w-8 rounded-full bg-brand-blue/10 text-center text-xs leading-8 font-semibold text-brand-navy">{merchantEmail?.[0]?.toUpperCase() ?? "M"}</div></div>
         </header>
         <main className="mx-auto max-w-[1500px] p-5 sm:p-8">{tab === "overview" && <Overview onTab={setTab} />}{tab === "chat" && <BuyerChat />}{tab === "rules" && <RulesPanel />}{tab === "approvals" && <ApprovalsPanel />}{tab === "audit" && <AuditPanel />}</main>
@@ -114,8 +117,31 @@ function RulesPanel() {
   const { rules, setRules } = useFirewall();
   const [draft, setDraft] = useState<Rules>(rules);
   const [saved, setSaved] = useState(false);
+  
+  useEffect(() => {
+    setDraft(rules);
+  }, [rules]);
+
   function update<K extends keyof Rules>(key: K, value: Rules[K]) { setDraft((d) => ({ ...d, [key]: value })); setSaved(false); }
-  function save(event: FormEvent) { event.preventDefault(); setRules(draft); setSaved(true); }
+  
+  async function save(event: FormEvent) { 
+    event.preventDefault(); 
+    try {
+      const rulesRef = doc(db, "merchants/demo_merchant/rules/current");
+      await setDoc(rulesRef, {
+        maxOrderAmount: draft.maxOrder,
+        dailySpendLimit: draft.dailyLimit,
+        allowedCategories: draft.categories,
+        approvalThreshold: draft.approvalAbove,
+        maxDiscountPercent: draft.maxDiscount,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+      setRules(draft); 
+      setSaved(true); 
+    } catch (err) {
+      console.error("Error saving rules to Firestore:", err);
+    }
+  }
   return <div className="mx-auto max-w-3xl space-y-7"><div><p className="text-sm text-muted-foreground">Control what your agents can spend</p><h2 className="mt-1 text-2xl font-bold tracking-tight text-brand-navy">Firewall rules</h2></div><form onSubmit={save} className="rounded-2xl border border-brand-blue/20 bg-card p-6 sm:p-8"><div className="grid gap-6 sm:grid-cols-2"><NumberField label="Max order amount" hint="Hard cap per transaction" value={draft.maxOrder} onChange={(v) => update("maxOrder", v)} /><NumberField label="Daily spend limit" hint="Across all AI agents" value={draft.dailyLimit} onChange={(v) => update("dailyLimit", v)} /><NumberField label="Approval threshold" hint="Orders above this need you" value={draft.approvalAbove} onChange={(v) => update("approvalAbove", v)} /><NumberField label="Maximum discount" hint="Allowed agent discount" value={draft.maxDiscount} suffix="%" onChange={(v) => update("maxDiscount", v)} /></div><div className="mt-8 border-t border-border pt-6"><div className="mb-3"><h3 className="text-sm font-semibold text-brand-navy">Allowed categories</h3><p className="mt-1 text-xs text-muted-foreground">Requests outside these categories are blocked automatically.</p></div><div className="grid gap-2 sm:grid-cols-2">{CATEGORIES.map((category) => <label key={category} className={cn("flex cursor-pointer items-center gap-3 rounded-xl border p-3 text-sm transition", draft.categories.includes(category) ? "border-brand-blue/40 bg-brand-blue/5 text-brand-navy" : "border-border text-muted-foreground")}><input type="checkbox" checked={draft.categories.includes(category)} onChange={(e) => update("categories", e.target.checked ? [...draft.categories, category] : draft.categories.filter((c) => c !== category))} className="h-4 w-4 accent-brand-blue" />{category}</label>)}</div></div><div className="mt-8 flex items-center justify-end gap-4 border-t border-border pt-6"><span className={cn("text-xs text-success transition", saved ? "opacity-100" : "opacity-0")}>Rules saved successfully</span><button type="submit" className="inline-flex items-center gap-2 rounded-xl bg-brand-blue px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-110"><Save className="h-4 w-4" />Save rules</button></div></form><div className="flex items-start gap-3 rounded-xl border border-brand-blue/15 bg-brand-blue/5 p-4 text-xs leading-relaxed text-muted-foreground"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-brand-blue" />These policies are evaluated in order for every incoming agent request. Changes take effect immediately.</div></div>;
 }
 function NumberField({ label, hint, value, suffix = "₹", onChange }: { label: string; hint: string; value: number; suffix?: string; onChange: (value: number) => void }) { return <label className="block"><span className="text-sm font-semibold text-brand-navy">{label}</span><span className="mt-1 block text-xs text-muted-foreground">{hint}</span><div className="relative mt-3"><span className="absolute left-3 top-1/2 -translate-y-1/2 font-mono text-xs text-muted-foreground">{suffix}</span><input type="number" min="0" value={value} onChange={(e) => onChange(Number(e.target.value))} className="h-11 w-full rounded-xl border border-border bg-background pl-8 pr-3 font-mono text-sm text-brand-navy outline-none transition focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/15" /></div></label> }

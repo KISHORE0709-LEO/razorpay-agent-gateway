@@ -6,10 +6,13 @@ import {
   useMemo,
   useRef,
   useState,
+  useEffect,
 } from "react";
 import { evaluateRequest } from "./firewall";
 import { GENESIS_HASH, nextHash } from "./hash";
 import { ApprovalItem, AuditEntry, Decision, Product, Rules } from "./types";
+import { db } from "./firebase";
+import { doc, getDoc } from "firebase/firestore";
 
 export const AGENT_ID = "agt_live_7f3c9e";
 
@@ -68,6 +71,28 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
   const [rules, setRules] = useState<Rules>(DEFAULT_RULES);
   const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
   const [approvals, setApprovals] = useState<ApprovalItem[]>([]);
+
+  useEffect(() => {
+    async function loadRules() {
+      try {
+        const rulesRef = doc(db, "merchants/demo_merchant/rules/current");
+        const snap = await getDoc(rulesRef);
+        if (snap.exists()) {
+          const data = snap.data();
+          setRules({
+            maxOrder: data.maxOrderAmount ?? DEFAULT_RULES.maxOrder,
+            dailyLimit: data.dailySpendLimit ?? DEFAULT_RULES.dailyLimit,
+            categories: data.allowedCategories ?? DEFAULT_RULES.categories,
+            approvalAbove: data.approvalThreshold ?? DEFAULT_RULES.approvalAbove,
+            maxDiscount: data.maxDiscountPercent ?? DEFAULT_RULES.maxDiscount,
+          });
+        }
+      } catch (error) {
+        console.error("Failed to load rules from Firestore:", error);
+      }
+    }
+    loadRules();
+  }, []);
 
   const auditLogRef = useRef(auditLog);
   auditLogRef.current = auditLog;
