@@ -12,7 +12,7 @@ import { evaluateRequest } from "./firewall";
 import { GENESIS_HASH, nextHash } from "./hash";
 import { ApprovalItem, AuditEntry, Decision, Product, Rules } from "./types";
 import { db } from "./firebase";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, query, collection, where, orderBy, onSnapshot } from "firebase/firestore";
 
 export const AGENT_ID = "agt_live_7f3c9e";
 
@@ -44,9 +44,10 @@ export interface SubmitResult {
   alternative?: Product;
   entry?: AuditEntry;
   approval?: ApprovalItem;
+  transactionId?: string;
 }
 
-interface FirewallStore {
+export interface FirewallStore {
   isLoggedIn: boolean;
   merchantEmail: string | null;
   login: (email: string) => void;
@@ -56,11 +57,12 @@ interface FirewallStore {
   setRules: (rules: Rules) => void;
 
   auditLog: AuditEntry[];
-  approvals: ApprovalItem[];
+  approvals: any[];
   dailySpent: number;
 
   submitRequest: (product: Product) => Promise<SubmitResult>;
-  resolveApproval: (id: string, approve: boolean) => SubmitResult | undefined;
+  sendChatRequest: (message: string) => Promise<SubmitResult>;
+  resolveApproval: (id: string, approve: boolean) => Promise<SubmitResult | undefined>;
 }
 
 const FirewallContext = createContext<FirewallStore | null>(null);
@@ -70,7 +72,33 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
   const [merchantEmail, setMerchantEmail] = useState<string | null>(() => sessionStorage.getItem("sentrypay-email"));
   const [rules, setRules] = useState<Rules>(DEFAULT_RULES);
   const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
-  const [approvals, setApprovals] = useState<ApprovalItem[]>([]);
+  const [approvals, setApprovals] = useState<any[]>([]);
+
+  useEffect(() => {
+    const txnsRef = collection(db, "merchants/demo_merchant/transactions");
+    
+    // Listener for approvals
+    const qApprovals = query(
+      txnsRef,
+      where("decision", "==", "escalated"),
+      where("status", "==", "pending"),
+      orderBy("time", "desc")
+    );
+    const unsubApprovals = onSnapshot(qApprovals, (snap) => {
+      setApprovals(snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+    });
+
+    // Listener for audit trail
+    const qAudit = query(txnsRef, orderBy("time", "desc"));
+    const unsubAudit = onSnapshot(qAudit, (snap) => {
+      setAuditLog(snap.docs.map((doc) => ({ id: doc.id, ...doc.data() } as AuditEntry)));
+    });
+
+    return () => {
+      unsubApprovals();
+      unsubAudit();
+    };
+  }, []);
 
   useEffect(() => {
     async function loadRules() {
@@ -94,11 +122,6 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
     loadRules();
   }, []);
 
-  const auditLogRef = useRef(auditLog);
-  auditLogRef.current = auditLog;
-  const rulesRef = useRef(rules);
-  rulesRef.current = rules;
-
   const dailySpent = useMemo(
     () =>
       auditLog
@@ -106,8 +129,6 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
         .reduce((sum, e) => sum + e.amount, 0),
     [auditLog],
   );
-  const dailySpentRef = useRef(dailySpent);
-  dailySpentRef.current = dailySpent;
 
   const login = useCallback((email: string) => {
     sessionStorage.setItem("sentrypay-session", "active");
@@ -122,26 +143,6 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
     setIsLoggedIn(false);
     setMerchantEmail(null);
   }, []);
-
-  const appendAuditEntry = useCallback(
-    (product: Product, decision: Decision, reason: string): AuditEntry => {
-      const prevHash = auditLogRef.current[0]?.hash ?? GENESIS_HASH;
-      const base = {
-        time: new Date().toISOString(),
-        agent: AGENT_ID,
-        product: product.name,
-        amount: product.price,
-        decision,
-        reason,
-        orderId: decision === "approved" ? randomOrderId() : undefined,
-      };
-      const hash = nextHash(prevHash, base);
-      const entry: AuditEntry = { id: hash, prevHash, hash, ...base };
-      setAuditLog((log) => [entry, ...log]);
-      return entry;
-    },
-    [],
-  );
 
   const submitRequest = useCallback(
     async (product: Product): Promise<SubmitResult> => {
@@ -170,26 +171,20 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
           alternative: result.recoveryProduct,
         };
 
-        if (result.decision === "approved") {
-          const entry = appendAuditEntry(product, "approved", result.reason);
-          return { ...mappedResult, entry };
-        }
-
-        if (result.decision === "blocked") {
-          const entry = appendAuditEntry(product, "blocked", result.reason);
-          return { ...mappedResult, entry };
+        if (result.decision === "approved" || result.decision === "blocked") {
+          return mappedResult;
         }
 
         if (result.decision === "escalated") {
           const approval: ApprovalItem = {
-            id: `apr_${Math.random().toString(36).slice(2, 10)}`,
+            id: result.transactionId || `apr_${Math.random().toString(36).slice(2, 10)}`,
             time: new Date().toISOString(),
             agent: AGENT_ID,
             product,
             amount: product.price,
             reason: result.reason,
           };
-          setApprovals((list) => [approval, ...list]);
+
           return { ...mappedResult, approval };
         }
 
@@ -199,26 +194,19 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
         return { decision: "blocked", reason: "Error connecting to firewall" };
       }
     },
-    [appendAuditEntry],
+    [],
   );
 
-  const resolveApproval = useCallback(
-    async (id: string, approve: boolean): Promise<SubmitResult | undefined> => {
-      const item = approvals.find((a) => a.id === id);
-      if (!item) return undefined;
-      setApprovals((list) => list.filter((a) => a.id !== id));
-
-      const decision = approve ? "approved" : "blocked";
+  const sendChatRequest = useCallback(
+    async (message: string): Promise<SubmitResult> => {
       try {
-        const response = await fetch("/api/evaluate", {
+        const response = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             merchantId: "demo_merchant",
             agentId: AGENT_ID,
-            productId: item.product.id,
-            requestedAmount: item.product.price,
-            overrideDecision: decision
+            message: message,
           }),
         });
         
@@ -232,17 +220,57 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
         const mappedResult: SubmitResult = {
           decision: result.decision,
           reason: result.reason,
+          alternative: result.recoveryProduct,
+          transactionId: result.transactionId,
         };
 
-        const entry = appendAuditEntry(item.product, mappedResult.decision, mappedResult.reason);
-        return { ...mappedResult, entry };
+        const product = result.parsedProduct;
+        if (!product) return mappedResult; // blocked with no product
+
+        if (result.decision === "approved" || result.decision === "blocked") {
+          return mappedResult;
+        }
+
+        if (result.decision === "escalated") {
+          const approval: ApprovalItem = {
+            id: result.transactionId || `apr_${Math.random().toString(36).slice(2, 10)}`,
+            time: new Date().toISOString(),
+            agent: AGENT_ID,
+            product,
+            amount: product.price,
+            reason: result.reason,
+          };
+
+          return { ...mappedResult, approval };
+        }
+
+        return mappedResult;
       } catch (err) {
-        console.error("Error resolving approval:", err);
-        const entry = appendAuditEntry(item.product, "blocked", "Error connecting to firewall");
-        return { decision: "blocked", reason: "Error connecting to firewall", entry };
+        console.error(err);
+        return { decision: "blocked", reason: "Error connecting to firewall" };
       }
     },
-    [approvals, appendAuditEntry],
+    [],
+  );
+
+  const resolveApproval = useCallback(
+    async (id: string, approve: boolean): Promise<SubmitResult | undefined> => {
+      try {
+        const res = await fetch("/api/resolve", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ transactionId: id, approve }),
+        });
+        if (!res.ok) {
+          console.error("Failed to resolve approval:", await res.text());
+        }
+        return undefined; // Real-time UI will update via Firestore listeners
+      } catch (err) {
+        console.error("Error resolving approval:", err);
+        return undefined;
+      }
+    },
+    [],
   );
 
   const value: FirewallStore = {
@@ -256,6 +284,7 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
     approvals,
     dailySpent,
     submitRequest,
+    sendChatRequest,
     resolveApproval,
   };
 

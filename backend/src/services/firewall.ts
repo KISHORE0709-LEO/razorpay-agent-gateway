@@ -58,7 +58,7 @@ export async function evaluatePurchaseRequest(
       let bestMatch: any = null;
       let minDiff = Infinity;
       altSnaps.forEach(snap => {
-        const altData = { id: snap.id, ...snap.data() };
+        const altData: any = { id: snap.id, ...snap.data() };
         if (altData.price <= rules.maxOrderAmount) {
           const diff = Math.abs(requestedAmount - altData.price);
           if (diff < minDiff) {
@@ -135,6 +135,10 @@ export async function evaluatePurchaseRequest(
     reason,
   };
   
+  if (decision === "recovered" && recoveryProduct) {
+    txnData.savedAmount = requestedAmount - recoveryProduct.price;
+  }
+  
   if (decision === "approved") {
     try {
       const order = await createRazorpayOrder(requestedAmount, product.name);
@@ -145,6 +149,8 @@ export async function evaluatePurchaseRequest(
       txnData.status = "failed";
       txnData.errorReason = err.message || "Razorpay API error";
     }
+  } else if (decision === "escalated") {
+    txnData.status = "pending";
   }
 
   const hashString = prevHash + JSON.stringify(txnData);
@@ -156,7 +162,7 @@ export async function evaluatePurchaseRequest(
     hash
   };
 
-  await addDoc(txnsRef, finalTxn);
+  const docRef = await addDoc(txnsRef, finalTxn);
 
   return {
     decision,
@@ -164,6 +170,7 @@ export async function evaluatePurchaseRequest(
     recoveryProduct,
     status: txnData.status,
     razorpayOrderId: txnData.razorpayOrderId,
-    errorReason: txnData.errorReason
+    errorReason: txnData.errorReason,
+    transactionId: docRef.id
   };
 }

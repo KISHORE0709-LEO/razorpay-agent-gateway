@@ -26,6 +26,8 @@ export interface AuditEntry {
   hash: string;
   prevHash: string;
   orderId?: string;
+  status?: "pending" | "completed" | "denied" | "failed";
+  savedAmount?: number;
 }
 
 export interface ApprovalItem {
