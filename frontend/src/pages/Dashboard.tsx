@@ -1,11 +1,10 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { db } from "@/lib/firebase";
-import { doc, setDoc, onSnapshot, collection, query, where, orderBy } from "firebase/firestore";
+import { doc, setDoc, onSnapshot } from "firebase/firestore";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
-  ArrowDownRight,
   ArrowUpRight,
   Ban,
   Bot,
@@ -17,22 +16,17 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
-  PanelLeft,
-  MessageSquareText,
   RefreshCw,
   Save,
   Settings2,
   ShieldCheck,
-  ShoppingBag,
-  Sparkles,
-  UserRound,
   X,
-  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { CATEGORIES, CATALOG, parseIntent } from "@/lib/catalog";
+import { CATEGORIES } from "@/lib/catalog";
 import { AGENT_ID, useFirewall, SubmitResult } from "@/lib/store";
-import { Decision, Product, Rules } from "@/lib/types";
+import { Decision, Rules } from "@/lib/types";
+import { GENESIS_HASH, computeTxnHash } from "@/lib/hash";
 
 const NAV = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -106,9 +100,9 @@ function Overview({ onTab }: { onTab: (tab: Tab) => void }) {
   // Requests today: count of all transactions today
   const requestsToday = todayLog.length;
   
-  // Approved volume: sum of completed transaction amounts today
+  // Approved volume: sum of approved transaction amounts today
   const approvedVolume = todayLog
-    .filter((e) => e.status === "completed")
+    .filter((e) => e.decision === "approved" || e.status === "completed")
     .reduce((sum, e) => sum + (e.amount || 0), 0);
   
   // Blocked requests: count of blocked transactions today
@@ -181,7 +175,7 @@ function Overview({ onTab }: { onTab: (tab: Tab) => void }) {
         <div className="flex items-start justify-between">
           <div>
             <h3 className="font-semibold text-brand-navy">Active policy</h3>
-            <p className="mt-1 text-xs text-muted-foreground">Last saved just now</p>
+            <p className="mt-1 text-xs text-muted-foreground">Synchronized with Firestore rules/current</p>
           </div>
           <button onClick={() => onTab("rules")} className="text-xs font-semibold text-brand-blue hover:underline">Edit</button>
         </div>
@@ -242,7 +236,7 @@ function MiniFlow({ latestDecision, latestTxnId }: { latestDecision: string | nu
       
       <motion.div
         key={`firewall-${latestTxnId}`}
-        initial={{ scale: 1.1, backgroundColor: "rgba(59, 130, 246, 0.2)" }}
+        initial={{ scale: 1.15, backgroundColor: "rgba(59, 130, 246, 0.2)" }}
         animate={{ scale: 1, backgroundColor: "transparent" }}
         transition={{ duration: 0.5 }}
       >
@@ -253,21 +247,21 @@ function MiniFlow({ latestDecision, latestTxnId }: { latestDecision: string | nu
       
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {[
-          [CheckCircle2, "Approved", "text-success", "approved"],
-          [RefreshCw, "Recovered", "text-brand-blue", "recovered"],
-          [Clock3, "Escalated", "text-warning", "escalated"],
-          [Ban, "Blocked", "text-destructive", "blocked"]
-        ].map(([Icon, label, color, decision]) => {
+          [CheckCircle2, "Approved", "text-success", "border-success bg-success/15", "approved"],
+          [RefreshCw, "Recovered", "text-brand-blue", "border-brand-blue bg-brand-blue/15", "recovered"],
+          [Clock3, "Escalated", "text-warning", "border-warning bg-warning/15", "escalated"],
+          [Ban, "Blocked", "text-destructive", "border-destructive bg-destructive/15", "blocked"]
+        ].map(([Icon, label, color, activeClass, decision]) => {
           const isLatest = latestDecision === decision;
           return (
             <motion.div
               key={String(label)}
-              animate={isLatest ? { scale: [1, 1.1, 1], boxShadow: ["0px 0px 0px rgba(0,0,0,0)", "0px 0px 8px rgba(0,0,0,0.2)", "0px 0px 0px rgba(0,0,0,0)"] } : {}}
-              transition={{ duration: 0.5 }}
-              className="flex items-center gap-1.5 rounded-lg bg-muted px-2.5 py-2"
+              animate={isLatest ? { scale: [1, 1.15, 1], boxShadow: ["0px 0px 0px rgba(0,0,0,0)", "0px 0px 10px rgba(59, 130, 246, 0.3)", "0px 0px 0px rgba(0,0,0,0)"] } : {}}
+              transition={{ duration: 0.6 }}
+              className={cn("flex items-center gap-1.5 rounded-lg border px-2.5 py-2 transition-all", isLatest ? activeClass : "bg-muted border-transparent")}
             >
               <Icon className={cn("h-3.5 w-3.5", String(color))} />
-              <span className="text-[10px] font-medium">{String(label)}</span>
+              <span className={cn("text-[10px] font-medium", isLatest ? "font-bold text-brand-navy" : "")}>{String(label)}</span>
             </motion.div>
           );
         })}
@@ -282,15 +276,20 @@ function RulesPanel() {
   const { rules, setRules } = useFirewall();
   const [draft, setDraft] = useState<Rules>(rules);
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
   
   useEffect(() => {
     setDraft(rules);
   }, [rules]);
 
-  function update<K extends keyof Rules>(key: K, value: Rules[K]) { setDraft((d) => ({ ...d, [key]: value })); setSaved(false); }
+  function update<K extends keyof Rules>(key: K, value: Rules[K]) { 
+    setDraft((d) => ({ ...d, [key]: value })); 
+    setSaved(false); 
+  }
   
   async function save(event: FormEvent) { 
     event.preventDefault(); 
+    setSaving(true);
     try {
       const rulesRef = doc(db, "merchants/demo_merchant/rules/current");
       await setDoc(rulesRef, {
@@ -303,19 +302,82 @@ function RulesPanel() {
       }, { merge: true });
       setRules(draft); 
       setSaved(true); 
+      setTimeout(() => setSaved(false), 4000);
     } catch (err) {
       console.error("Error saving rules to Firestore:", err);
+    } finally {
+      setSaving(false);
     }
   }
-  return <div className="mx-auto max-w-3xl space-y-7"><div><p className="text-sm text-muted-foreground">Control what your agents can spend</p><h2 className="mt-1 text-2xl font-bold tracking-tight text-brand-navy">Firewall rules</h2></div><form onSubmit={save} className="rounded-2xl border border-brand-blue/20 bg-card p-6 sm:p-8"><div className="grid gap-6 sm:grid-cols-2"><NumberField label="Max order amount" hint="Hard cap per transaction" value={draft.maxOrder} onChange={(v) => update("maxOrder", v)} /><NumberField label="Daily spend limit" hint="Across all AI agents" value={draft.dailyLimit} onChange={(v) => update("dailyLimit", v)} /><NumberField label="Approval threshold" hint="Orders above this need you" value={draft.approvalAbove} onChange={(v) => update("approvalAbove", v)} /><NumberField label="Maximum discount" hint="Allowed agent discount" value={draft.maxDiscount} suffix="%" onChange={(v) => update("maxDiscount", v)} /></div><div className="mt-8 border-t border-border pt-6"><div className="mb-3"><h3 className="text-sm font-semibold text-brand-navy">Allowed categories</h3><p className="mt-1 text-xs text-muted-foreground">Requests outside these categories are blocked automatically.</p></div><div className="grid gap-2 sm:grid-cols-2">{CATEGORIES.map((category) => <label key={category} className={cn("flex cursor-pointer items-center gap-3 rounded-xl border p-3 text-sm transition", draft.categories.includes(category) ? "border-brand-blue/40 bg-brand-blue/5 text-brand-navy" : "border-border text-muted-foreground")}><input type="checkbox" checked={draft.categories.includes(category)} onChange={(e) => update("categories", e.target.checked ? [...draft.categories, category] : draft.categories.filter((c) => c !== category))} className="h-4 w-4 accent-brand-blue" />{category}</label>)}</div></div><div className="mt-8 flex items-center justify-end gap-4 border-t border-border pt-6"><span className={cn("text-xs text-success transition", saved ? "opacity-100" : "opacity-0")}>Rules saved successfully</span><button type="submit" className="inline-flex items-center gap-2 rounded-xl bg-brand-blue px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-110"><Save className="h-4 w-4" />Save rules</button></div></form><div className="flex items-start gap-3 rounded-xl border border-brand-blue/15 bg-brand-blue/5 p-4 text-xs leading-relaxed text-muted-foreground"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-brand-blue" />These policies are evaluated in order for every incoming agent request. Changes take effect immediately.</div></div>;
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-7">
+      <div>
+        <p className="text-sm text-muted-foreground">Control what your agents can spend</p>
+        <h2 className="mt-1 text-2xl font-bold tracking-tight text-brand-navy">Firewall rules</h2>
+      </div>
+      <form onSubmit={save} className="rounded-2xl border border-brand-blue/20 bg-card p-6 sm:p-8">
+        <div className="grid gap-6 sm:grid-cols-2">
+          <NumberField label="Max order amount" hint="Hard cap per transaction" value={draft.maxOrder} onChange={(v) => update("maxOrder", v)} />
+          <NumberField label="Daily spend limit" hint="Across all AI agents" value={draft.dailyLimit} onChange={(v) => update("dailyLimit", v)} />
+          <NumberField label="Approval threshold" hint="Orders above this need you" value={draft.approvalAbove} onChange={(v) => update("approvalAbove", v)} />
+          <NumberField label="Maximum discount" hint="Allowed agent discount" value={draft.maxDiscount} suffix="%" onChange={(v) => update("maxDiscount", v)} />
+        </div>
+        <div className="mt-8 border-t border-border pt-6">
+          <div className="mb-3">
+            <h3 className="text-sm font-semibold text-brand-navy">Allowed categories</h3>
+            <p className="mt-1 text-xs text-muted-foreground">Requests outside these categories are blocked automatically.</p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {CATEGORIES.map((category) => (
+              <label key={category} className={cn("flex cursor-pointer items-center gap-3 rounded-xl border p-3 text-sm transition", draft.categories.includes(category) ? "border-brand-blue/40 bg-brand-blue/5 text-brand-navy font-medium" : "border-border text-muted-foreground")}>
+                <input type="checkbox" checked={draft.categories.includes(category)} onChange={(e) => update("categories", e.target.checked ? [...draft.categories, category] : draft.categories.filter((c) => c !== category))} className="h-4 w-4 accent-brand-blue" />
+                {category}
+              </label>
+            ))}
+          </div>
+        </div>
+        <div className="mt-8 flex items-center justify-end gap-4 border-t border-border pt-6">
+          <span className={cn("flex items-center gap-1.5 text-xs font-medium text-success transition-opacity duration-200", saved ? "opacity-100" : "opacity-0")}>
+            <Check className="h-4 w-4" />
+            Rules saved successfully to Firestore!
+          </span>
+          <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-brand-blue px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50">
+            <Save className="h-4 w-4" />
+            {saving ? "Saving..." : "Save rules"}
+          </button>
+        </div>
+      </form>
+      <div className="flex items-start gap-3 rounded-xl border border-brand-blue/15 bg-brand-blue/5 p-4 text-xs leading-relaxed text-muted-foreground">
+        <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-brand-blue" />
+        These policies are evaluated in order for every incoming agent request: Category allow-list &rarr; Per-order cap &rarr; Daily spend limit &rarr; Approval threshold. Changes take effect immediately.
+      </div>
+    </div>
+  );
 }
-function NumberField({ label, hint, value, suffix = "₹", onChange }: { label: string; hint: string; value: number; suffix?: string; onChange: (value: number) => void }) { return <label className="block"><span className="text-sm font-semibold text-brand-navy">{label}</span><span className="mt-1 block text-xs text-muted-foreground">{hint}</span><div className="relative mt-3"><span className="absolute left-3 top-1/2 -translate-y-1/2 font-mono text-xs text-muted-foreground">{suffix}</span><input type="number" min="0" value={value} onChange={(e) => onChange(Number(e.target.value))} className="h-11 w-full rounded-xl border border-border bg-background pl-8 pr-3 font-mono text-sm text-brand-navy outline-none transition focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/15" /></div></label> }
+
+function NumberField({ label, hint, value, suffix = "₹", onChange }: { label: string; hint: string; value: number; suffix?: string; onChange: (value: number) => void }) {
+  return (
+    <label className="block">
+      <span className="text-sm font-semibold text-brand-navy">{label}</span>
+      <span className="mt-1 block text-xs text-muted-foreground">{hint}</span>
+      <div className="relative mt-3">
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 font-mono text-xs text-muted-foreground">{suffix}</span>
+        <input type="number" min="0" value={value} onChange={(e) => onChange(Number(e.target.value))} className="h-11 w-full rounded-xl border border-border bg-background pl-8 pr-3 font-mono text-sm text-brand-navy outline-none transition focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/15" />
+      </div>
+    </label>
+  );
+}
 
 function BuyerChat() {
   const { sendChatRequest, submitRequest } = useFirewall();
   const [text, setText] = useState("");
-  const [messages, setMessages] = useState<{ from: "user" | "agent"; text: string; result?: SubmitResult }[]>([{ from: "agent", text: "Hi! I’m your AI buyer. Tell me what you’d like me to purchase and I’ll run it through the firewall." }]);
+  const [loading, setLoading] = useState(false);
+  const [messages, setMessages] = useState<{ from: "user" | "agent"; text: string; result?: SubmitResult }[]>([
+    { from: "agent", text: "Hi! I’m your autonomous AI buyer powered by Groq and the SentryPay firewall. Tell me what product you’d like to purchase and I’ll extract your intent and submit it through policy verification." }
+  ]);
   
+  // Real-time Firestore listener for escalated transactions
   useEffect(() => {
     const escalatedMessages = messages.filter(m => m.result?.decision === 'escalated' && m.result?.transactionId);
     if (escalatedMessages.length === 0) return;
@@ -324,9 +386,20 @@ function BuyerChat() {
       return onSnapshot(doc(db, "merchants/demo_merchant/transactions", m.result!.transactionId!), (snap) => {
         if (snap.exists()) {
           const data = snap.data();
-          if (data.decision !== 'escalated') {
+          if (data.status === 'completed' || data.status === 'denied' || (data.decision && data.decision !== 'escalated')) {
             setMessages(prev => prev.map(msg => 
-              msg === m ? { ...msg, result: { ...msg.result!, decision: data.decision as Decision, reason: data.reason } } : msg
+              msg.result?.transactionId === m.result?.transactionId
+                ? {
+                    ...msg,
+                    result: {
+                      ...msg.result!,
+                      decision: data.decision as Decision,
+                      reason: data.reason || (data.status === 'completed' ? 'Approved by merchant' : 'Denied by merchant'),
+                      status: data.status,
+                      orderId: data.orderId || data.razorpayOrderId,
+                    }
+                  }
+                : msg
             ));
           }
         }
@@ -338,20 +411,205 @@ function BuyerChat() {
 
   async function send(event: FormEvent) { 
     event.preventDefault(); 
-    if (!text.trim()) return; 
+    if (!text.trim() || loading) return; 
     const request = text.trim(); 
     
     setMessages((m) => [...m, { from: "user", text: request }]); 
     setText(""); 
+    setLoading(true);
     
-    const result = await sendChatRequest(request); 
-    setMessages((m) => [...m, { from: "agent", text: `I evaluated the request through the firewall.`, result }]); 
+    try {
+      const result = await sendChatRequest(request); 
+      setMessages((m) => [...m, { from: "agent", text: `I evaluated "${request}" through the firewall policy engine.`, result }]); 
+    } finally {
+      setLoading(false);
+    }
   }
   
-  async function acceptAlternative(result: SubmitResult) { if (!result.alternative) return; const next = await submitRequest(result.alternative); setMessages((m) => [...m, { from: "user", text: `Accept ${result.alternative!.name} for ₹${result.alternative!.price.toLocaleString("en-IN")}` }, { from: "agent", text: `Alternative request sent through the firewall.`, result: next }]); }
-  return <div className="mx-auto max-w-4xl"><div className="mb-7"><p className="text-sm text-muted-foreground">Simulate an autonomous purchase</p><h2 className="mt-1 text-2xl font-bold tracking-tight text-brand-navy">AI Buyer</h2></div><div className="overflow-hidden rounded-2xl border border-brand-blue/20 bg-card"><div className="flex items-center gap-3 border-b border-border px-5 py-4"><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-blue/10 text-brand-blue"><Bot className="h-5 w-5" /></div><div><div className="text-sm font-semibold text-brand-navy">SentryPay shopping agent</div><div className="flex items-center gap-1 text-[11px] text-success"><span className="h-1.5 w-1.5 rounded-full bg-success" />Connected to merchant catalog</div></div><span className="ml-auto rounded-md bg-muted px-2 py-1 font-mono text-[10px] text-muted-foreground">{AGENT_ID}</span></div><div className="min-h-[390px] space-y-5 bg-background/50 p-5 sm:p-7">{messages.map((message, i) => <div key={i} className={cn("flex gap-3", message.from === "user" && "justify-end")}><div className={cn("max-w-[90%] rounded-2xl px-4 py-3 text-sm", message.from === "user" ? "rounded-br-md bg-brand-blue text-white" : "rounded-bl-md border border-border bg-card text-brand-navy")}><p>{message.text}</p>{message.result && <DecisionCard result={message.result} onAccept={() => acceptAlternative(message.result!)} />}</div></div>)}</div><form onSubmit={send} className="flex gap-2 border-t border-border bg-card p-4"><input value={text} onChange={(e) => setText(e.target.value)} placeholder="Try: Buy me a wireless mouse under ₹1,500" className="h-11 min-w-0 flex-1 rounded-xl border border-border bg-background px-4 text-sm outline-none focus:border-brand-blue" /><button type="submit" className="flex h-11 shrink-0 items-center gap-2 rounded-xl bg-brand-blue px-4 text-sm font-semibold text-white transition hover:brightness-110"><span className="hidden sm:inline">Send request</span><ArrowUpRight className="h-4 w-4" /></button></form></div></div>;
+  async function acceptAlternative(result: SubmitResult) { 
+    if (!result.alternative) return; 
+    setLoading(true);
+    try {
+      const next = await submitRequest(result.alternative); 
+      setMessages((m) => [
+        ...m, 
+        { from: "user", text: `Accept ${result.alternative!.name} for ₹${result.alternative!.price.toLocaleString("en-IN")}` }, 
+        { from: "agent", text: `Alternative request sent through the firewall.`, result: next }
+      ]); 
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function declineAlternative(result: SubmitResult) {
+    setMessages((m) => [
+      ...m,
+      { from: "user", text: `Decline alternative offer` },
+      { from: "agent", text: `Offer declined. Let me know if you would like to search for a different item.` }
+    ]);
+  }
+
+  return (
+    <div className="mx-auto max-w-4xl">
+      <div className="mb-7">
+        <p className="text-sm text-muted-foreground">Simulate an autonomous purchase with natural language</p>
+        <h2 className="mt-1 text-2xl font-bold tracking-tight text-brand-navy">AI Buyer</h2>
+      </div>
+      <div className="overflow-hidden rounded-2xl border border-brand-blue/20 bg-card">
+        <div className="flex items-center gap-3 border-b border-border px-5 py-4">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-blue/10 text-brand-blue"><Bot className="h-5 w-5" /></div>
+          <div>
+            <div className="text-sm font-semibold text-brand-navy">SentryPay shopping agent</div>
+            <div className="flex items-center gap-1 text-[11px] text-success"><span className="h-1.5 w-1.5 rounded-full bg-success" />Connected to Groq LLM & merchant catalog</div>
+          </div>
+          <span className="ml-auto rounded-md bg-muted px-2 py-1 font-mono text-[10px] text-muted-foreground">{AGENT_ID}</span>
+        </div>
+        
+        <div className="min-h-[420px] max-h-[600px] overflow-y-auto space-y-5 bg-background/50 p-5 sm:p-7">
+          {messages.map((message, i) => (
+            <div key={i} className={cn("flex gap-3", message.from === "user" && "justify-end")}>
+              <div className={cn("max-w-[90%] rounded-2xl px-4 py-3 text-sm", message.from === "user" ? "rounded-br-md bg-brand-blue text-white" : "rounded-bl-md border border-border bg-card text-brand-navy")}>
+                <p>{message.text}</p>
+                {message.result && (
+                  <DecisionCard 
+                    result={message.result} 
+                    onAccept={() => acceptAlternative(message.result!)} 
+                    onDecline={() => declineAlternative(message.result!)}
+                  />
+                )}
+              </div>
+            </div>
+          ))}
+          {loading && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground italic">
+              <RefreshCw className="h-3 w-3 animate-spin text-brand-blue" />
+              AI Agent is parsing catalog and evaluating firewall rules...
+            </div>
+          )}
+        </div>
+
+        <form onSubmit={send} className="flex gap-2 border-t border-border bg-card p-4">
+          <input 
+            value={text} 
+            onChange={(e) => setText(e.target.value)} 
+            placeholder="Try: 'Buy wireless earbuds under 2000' or 'Buy running shoes for 8000'" 
+            className="h-11 min-w-0 flex-1 rounded-xl border border-border bg-background px-4 text-sm outline-none focus:border-brand-blue" 
+          />
+          <button type="submit" disabled={loading} className="flex h-11 shrink-0 items-center gap-2 rounded-xl bg-brand-blue px-4 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50">
+            <span className="hidden sm:inline">Send request</span>
+            <ArrowUpRight className="h-4 w-4" />
+          </button>
+        </form>
+      </div>
+    </div>
+  );
 }
-function DecisionCard({ result, onAccept }: { result: SubmitResult; onAccept: () => void }) { const config = ({ approved: ["Approved", "text-success", "bg-success/10", CheckCircle2], recovered: ["Recovery offer", "text-brand-blue", "bg-brand-blue/10", RefreshCw], escalated: ["Pending approval", "text-warning", "bg-warning/10", Clock3], blocked: ["Blocked", "text-destructive", "bg-destructive/10", Ban] } as const)[result.decision]; const Icon = config[3]; return <div className={cn("mt-3 rounded-xl border border-brand-blue/25 p-3", config[2])}><div className={cn("flex items-center gap-2 text-xs font-semibold", config[1])}><Icon className="h-4 w-4" />{config[0]}<span className="ml-auto font-mono text-[10px] uppercase">{result.decision}</span></div><p className="mt-2 text-xs leading-relaxed text-muted-foreground">{result.reason}</p>{result.entry?.orderId && <div className="mt-2 flex items-center gap-2 font-mono text-[10px] text-success"><Check className="h-3 w-3" />Order placed · {result.entry.orderId}</div>}{result.alternative && <div className="mt-3 flex items-center justify-between rounded-lg bg-card p-2.5"><div><div className="text-xs font-semibold text-brand-navy">{result.alternative.name}</div><div className="font-mono text-xs text-brand-navy">₹{result.alternative.price.toLocaleString("en-IN")}</div></div><button onClick={onAccept} className="rounded-lg bg-brand-blue px-3 py-1.5 text-xs font-semibold text-white">Accept</button></div>}</div> }
+
+function DecisionCard({ 
+  result, 
+  onAccept, 
+  onDecline 
+}: { 
+  result: SubmitResult; 
+  onAccept: () => void; 
+  onDecline: () => void; 
+}) { 
+  const config = ({ 
+    approved: ["Approved", "text-success", "bg-success/10 border-success/30", CheckCircle2], 
+    recovered: ["Recovery offer", "text-brand-blue", "bg-brand-blue/10 border-brand-blue/30", RefreshCw], 
+    escalated: ["Pending approval", "text-warning", "bg-warning/10 border-warning/30", Clock3], 
+    blocked: ["Blocked", "text-destructive", "bg-destructive/10 border-destructive/30", Ban] 
+  } as const)[result.decision]; 
+  
+  const Icon = config[3]; 
+  const orderId = result.orderId || result.entry?.orderId;
+
+  return (
+    <div className={cn("mt-3 rounded-xl border p-3.5 transition-all", config[2])}>
+      <div className={cn("flex items-center gap-2 text-xs font-semibold", config[1])}>
+        <Icon className="h-4 w-4" />
+        {config[0]}
+        <span className="ml-auto font-mono text-[10px] uppercase tracking-wider">{result.decision}</span>
+      </div>
+      
+      <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{result.reason}</p>
+
+      {/* Outcome 1: Approved confirmation card */}
+      {result.decision === "approved" && (
+        <div className="mt-3 rounded-lg border border-success/20 bg-card p-3">
+          <div className="flex items-center justify-between">
+            <div className="text-xs font-semibold text-brand-navy">Order Placed & Confirmed</div>
+            <span className="rounded bg-success/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-success">
+              {result.status === "completed" ? "PAID" : result.status?.toUpperCase() || "CONFIRMED"}
+            </span>
+          </div>
+          {orderId ? (
+            <div className="mt-2 flex items-center gap-2 font-mono text-[11px] text-brand-navy">
+              <Check className="h-3.5 w-3.5 text-success shrink-0" />
+              <span>Razorpay Order ID: <strong className="text-brand-blue">{orderId}</strong></span>
+            </div>
+          ) : (
+            <div className="mt-1.5 text-[10px] text-muted-foreground font-mono">
+              Status: {result.status} {result.errorReason ? `(${result.errorReason})` : ""}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Outcome 2: Recovery offer card with Accept and Decline */}
+      {result.decision === "recovered" && result.alternative && (
+        <div className="mt-3 rounded-lg border border-brand-blue/20 bg-card p-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-xs font-semibold text-brand-navy">{result.alternative.name}</div>
+              <div className="mt-0.5 font-mono text-xs font-bold text-brand-blue">
+                ₹{result.alternative.price.toLocaleString("en-IN")}
+              </div>
+            </div>
+            <span className="rounded bg-brand-blue/10 px-2 py-0.5 text-[10px] font-medium text-brand-blue">
+              In-policy alternative
+            </span>
+          </div>
+          <div className="mt-3 flex items-center justify-end gap-2 border-t border-border pt-2.5">
+            <button 
+              onClick={onDecline} 
+              className="rounded-lg border border-muted-foreground/30 px-3 py-1.5 text-xs font-semibold text-muted-foreground transition hover:bg-muted"
+            >
+              Decline
+            </button>
+            <button 
+              onClick={onAccept} 
+              className="rounded-lg bg-brand-blue px-3.5 py-1.5 text-xs font-semibold text-white transition hover:brightness-110"
+            >
+              Accept Alternative
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Outcome 3: Escalated pending-approval card with live status */}
+      {result.decision === "escalated" && (
+        <div className="mt-3 flex items-center justify-between rounded-lg border border-warning/20 bg-card p-2.5">
+          <div className="flex items-center gap-2">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-warning opacity-75"></span>
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-warning"></span>
+            </span>
+            <span className="text-xs font-medium text-brand-navy">Awaiting merchant review in Approval Queue</span>
+          </div>
+          <span className="font-mono text-[10px] text-muted-foreground">{result.transactionId?.slice(0, 8)}</span>
+        </div>
+      )}
+
+      {/* Outcome 4: Blocked plain rejection card */}
+      {result.decision === "blocked" && (
+        <div className="mt-2 rounded-lg bg-destructive/5 px-2.5 py-1.5 font-mono text-[10px] text-destructive">
+          POLICY ENFORCED • TRANSACTION HARD BLOCKED
+        </div>
+      )}
+    </div>
+  ); 
+}
 
 function ApprovalsPanel() {
   const { resolveApproval, approvals } = useFirewall();
@@ -374,7 +632,7 @@ function ApprovalsPanel() {
                 key={item.id}
                 initial={{ opacity: 0, y: 10, scale: 0.98 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
+                exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.25 } }}
                 className="flex flex-col gap-5 rounded-2xl border border-brand-blue/25 bg-card p-5 sm:flex-row sm:items-center"
               >
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-warning/10 text-warning">
@@ -390,20 +648,20 @@ function ApprovalsPanel() {
                   </p>
                   <p className="mt-2 text-xs text-muted-foreground">{item.reason}</p>
                   <div className="mt-2 font-mono text-[10px] text-muted-foreground">
-                    {item.id} · {new Date(item.time).toLocaleTimeString("en-IN")}
+                    ID: {item.id} · {new Date(item.time).toLocaleTimeString("en-IN")}
                   </div>
                 </div>
                 <div className="flex shrink-0 gap-2">
                   <button
                     onClick={() => resolveApproval(item.id, false)}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-destructive/20 px-3 py-2 text-xs font-semibold text-destructive hover:bg-destructive/5"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-destructive/20 px-3 py-2 text-xs font-semibold text-destructive hover:bg-destructive/5 transition"
                   >
                     <X className="h-3.5 w-3.5" />
                     Deny
                   </button>
                   <button
                     onClick={() => resolveApproval(item.id, true)}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-success px-3 py-2 text-xs font-semibold text-white hover:brightness-105"
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-success px-3.5 py-2 text-xs font-semibold text-white hover:brightness-105 transition"
                   >
                     <Check className="h-3.5 w-3.5" />
                     Approve
@@ -421,48 +679,62 @@ function ApprovalsPanel() {
 function AuditPanel() {
   const { auditLog } = useFirewall();
   const [verifying, setVerifying] = useState(false);
-  const [verified, setVerified] = useState(false);
+  const [verificationResult, setVerificationResult] = useState<{
+    checked: boolean;
+    valid: boolean;
+    count: number;
+    errorMsg?: string;
+  }>({ checked: false, valid: false, count: 0 });
 
   const verifyChain = async () => {
     setVerifying(true);
-    setVerified(false);
+    setVerificationResult({ checked: false, valid: false, count: 0 });
     
-    // Simulate some work so the UI shows the loading state
+    // Simulate verification delay for user feedback
     await new Promise((r) => setTimeout(r, 600));
 
-    for (let i = auditLog.length - 1; i >= 0; i--) {
-      const entry = auditLog[i];
-      const dataToHash = {
+    // Chain is ordered newest-first, reverse to verify chronologically from genesis
+    const chain = [...auditLog].reverse();
+    let currentPrev = GENESIS_HASH;
+    let valid = true;
+    let errorMsg: string | undefined = undefined;
+
+    for (let i = 0; i < chain.length; i++) {
+      const entry = chain[i];
+      
+      // 1. Verify prevHash links to previous block
+      if (entry.prevHash && entry.prevHash !== currentPrev) {
+        valid = false;
+        errorMsg = `Chain linkage broken at block #${i + 1} (${entry.product || entry.id}). Expected prevHash: ${currentPrev.slice(0, 10)}... Found: ${entry.prevHash.slice(0, 10)}...`;
+        break;
+      }
+
+      // 2. Recompute SHA-256 hash using canonical format
+      const computed = await computeTxnHash(entry.prevHash || GENESIS_HASH, {
         time: entry.time,
         agent: entry.agent,
         product: entry.product,
         amount: entry.amount,
         decision: entry.decision,
         reason: entry.reason,
-      };
-      // For approved transactions, orderId might be stored too
-      if (entry.decision === "approved" && entry.orderId) {
-        (dataToHash as any).orderId = entry.orderId;
-        (dataToHash as any).status = "completed";
-        (dataToHash as any).razorpayOrderId = entry.orderId; // if available
-      } else if (entry.decision === "escalated") {
-        (dataToHash as any).status = entry.status || "pending";
+      });
+
+      if (entry.hash && computed !== entry.hash) {
+        valid = false;
+        errorMsg = `Hash mismatch at block #${i + 1} (${entry.product || entry.id}). Cryptographic integrity corrupted!`;
+        break;
       }
 
-      // Recompute hash
-      const computedHash = await import("../lib/hash").then(m => m.computeHash(entry.prevHash, dataToHash));
-      
-      // If the hashes don't match, or the prevHash of the NEXT item doesn't match this hash, it's broken
-      // (For a robust verification, we just check if computed == entry.hash for now)
-      if (computedHash !== entry.hash && entry.hash) {
-        console.warn(`Hash mismatch at ${entry.id}. Expected ${entry.hash}, got ${computedHash}`);
-        // We'll just ignore for demo purposes if it doesn't perfectly match due to missing fields,
-        // but let's assume it passes. The UI instruction just says "confirm nothing was tampered with".
-      }
+      currentPrev = entry.hash || computed;
     }
 
     setVerifying(false);
-    setVerified(true);
+    setVerificationResult({
+      checked: true,
+      valid,
+      count: chain.length,
+      errorMsg,
+    });
   };
 
   return (
@@ -475,21 +747,28 @@ function AuditPanel() {
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-6 py-4">
           <div>
             <h3 className="font-semibold text-brand-navy">Hash-chained decisions</h3>
-            <p className="mt-1 text-xs text-muted-foreground">Every event is linked to the previous record</p>
+            <p className="mt-1 text-xs text-muted-foreground">Every event is cryptographically linked to the previous SHA-256 block</p>
           </div>
-          {verified ? (
-            <span className="flex items-center gap-1.5 rounded-full bg-success/10 px-2.5 py-1 text-[10px] font-semibold text-success">
-              <ShieldCheck className="h-3 w-3" />
-              Chain verified
-            </span>
+          {verificationResult.checked ? (
+            verificationResult.valid ? (
+              <span className="flex items-center gap-1.5 rounded-full bg-success/15 px-3 py-1.5 text-xs font-semibold text-success">
+                <ShieldCheck className="h-4 w-4" />
+                Chain verified ({verificationResult.count} blocks intact)
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 rounded-full bg-destructive/15 px-3 py-1.5 text-xs font-semibold text-destructive">
+                <Ban className="h-4 w-4" />
+                {verificationResult.errorMsg}
+              </span>
+            )
           ) : (
             <button
               onClick={verifyChain}
               disabled={verifying || auditLog.length === 0}
-              className="flex items-center gap-1.5 rounded-full bg-brand-blue/10 px-3 py-1.5 text-xs font-semibold text-brand-blue hover:bg-brand-blue/20 disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-full bg-brand-blue/10 px-3.5 py-1.5 text-xs font-semibold text-brand-blue hover:bg-brand-blue/20 disabled:opacity-50 transition"
             >
-              {verifying ? <RefreshCw className="h-3 w-3 animate-spin" /> : <ShieldCheck className="h-3 w-3" />}
-              {verifying ? "Verifying..." : "Verify chain"}
+              {verifying ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+              {verifying ? "Verifying SHA-256 Chain..." : "Verify chain"}
             </button>
           )}
         </div>
@@ -515,12 +794,13 @@ function AuditRow({ entry, detailed = false }: { entry: any; detailed?: boolean 
     blocked: ["Blocked", "text-destructive", "bg-destructive/10", Ban, "border-destructive"],
     escalated: ["Escalated", "text-warning", "bg-warning/10", Clock3, "border-warning"],
     recovered: ["Recovered", "text-brand-blue", "bg-brand-blue/10", RefreshCw, "border-brand-blue"],
-  } as const)[entry.decision as Decision];
+  } as const)[entry.decision as Decision] || ["Unknown", "text-muted-foreground", "bg-muted", Activity, "border-muted"];
+  
   const Icon = config[3];
   
   return (
     <motion.div
-      initial={{ opacity: 0, y: -20 }}
+      initial={{ opacity: 0, y: -10 }}
       animate={{ opacity: 1, y: 0 }}
       className={cn("flex items-start gap-3 px-6 py-4 border-l-4", config[4])}
     >
@@ -543,12 +823,23 @@ function AuditRow({ entry, detailed = false }: { entry: any; detailed?: boolean 
         </div>
         {detailed && (
           <div className="mt-2 flex flex-wrap items-center gap-2 font-mono text-[10px] text-muted-foreground">
-            <span className="rounded bg-muted px-2 py-1">hash: {entry.hash || "pending"}</span>
+            <span className="rounded bg-muted px-2 py-1">hash: {entry.hash ? `${entry.hash.slice(0, 16)}...` : "pending"}</span>
+            <span className="rounded bg-muted px-2 py-1">prev: {entry.prevHash ? `${entry.prevHash.slice(0, 16)}...` : "none"}</span>
             <span className="rounded bg-muted px-2 py-1">agent: {entry.agent}</span>
+            {entry.orderId && <span className="rounded bg-success/10 text-success px-2 py-1">order: {entry.orderId}</span>}
           </div>
         )}
       </div>
     </motion.div>
   );
 }
-function EmptyState({ icon: Icon, text, action, actionLabel }: { icon: typeof Activity; text: string; action?: () => void; actionLabel?: string }) { return <div className="flex flex-col items-center justify-center px-6 py-16 text-center"><Icon className="h-8 w-8 text-muted-foreground/40" /><p className="mt-3 max-w-sm text-sm text-muted-foreground">{text}</p>{action && <button onClick={action} className="mt-4 text-xs font-semibold text-brand-blue hover:underline">{actionLabel}</button>}</div> }
+
+function EmptyState({ icon: Icon, text, action, actionLabel }: { icon: typeof Activity; text: string; action?: () => void; actionLabel?: string }) { 
+  return (
+    <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
+      <Icon className="h-8 w-8 text-muted-foreground/40" />
+      <p className="mt-3 max-w-sm text-sm text-muted-foreground">{text}</p>
+      {action && <button onClick={action} className="mt-4 text-xs font-semibold text-brand-blue hover:underline">{actionLabel}</button>}
+    </div>
+  ); 
+}

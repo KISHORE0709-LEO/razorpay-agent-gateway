@@ -4,12 +4,10 @@ import {
   useCallback,
   useContext,
   useMemo,
-  useRef,
   useState,
   useEffect,
 } from "react";
-import { evaluateRequest } from "./firewall";
-import { GENESIS_HASH, nextHash } from "./hash";
+import { GENESIS_HASH } from "./hash";
 import { ApprovalItem, AuditEntry, Decision, Product, Rules } from "./types";
 import { db } from "./firebase";
 import { doc, getDoc, query, collection, where, orderBy, onSnapshot } from "firebase/firestore";
@@ -19,14 +17,10 @@ export const AGENT_ID = "agt_live_7f3c9e";
 const DEFAULT_RULES: Rules = {
   maxOrder: 5000,
   dailyLimit: 20000,
-  categories: ["Electronics"],
+  categories: ["Electronics", "Fashion", "Home & Kitchen", "Groceries"],
   approvalAbove: 2000,
   maxDiscount: 10,
 };
-
-function randomOrderId() {
-  return `order_${Math.random().toString(36).slice(2, 11)}`;
-}
 
 function isToday(iso: string) {
   const d = new Date(iso);
@@ -45,6 +39,10 @@ export interface SubmitResult {
   entry?: AuditEntry;
   approval?: ApprovalItem;
   transactionId?: string;
+  orderId?: string;
+  status?: string;
+  errorReason?: string;
+  parsedProduct?: Product;
 }
 
 export interface FirewallStore {
@@ -77,21 +75,25 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const txnsRef = collection(db, "merchants/demo_merchant/transactions");
     
-    // Listener for approvals
+    // Live listener for approval queue (single where filter to avoid composite index error)
     const qApprovals = query(
       txnsRef,
-      where("decision", "==", "escalated"),
-      where("status", "==", "pending"),
-      orderBy("time", "desc")
+      where("status", "==", "pending")
     );
     const unsubApprovals = onSnapshot(qApprovals, (snap) => {
-      setApprovals(snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+      const items = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() } as any));
+      items.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+      setApprovals(items);
+    }, (err) => {
+      console.warn("Approvals snapshot warning:", err);
     });
 
-    // Listener for audit trail
+    // Live listener for audit trail (ordered newest first)
     const qAudit = query(txnsRef, orderBy("time", "desc"));
     const unsubAudit = onSnapshot(qAudit, (snap) => {
       setAuditLog(snap.docs.map((doc) => ({ id: doc.id, ...doc.data() } as AuditEntry)));
+    }, (err) => {
+      console.warn("Audit snapshot warning:", err);
     });
 
     return () => {
@@ -125,8 +127,8 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
   const dailySpent = useMemo(
     () =>
       auditLog
-        .filter((e) => e.decision === "approved" && isToday(e.time))
-        .reduce((sum, e) => sum + e.amount, 0),
+        .filter((e) => (e.decision === "approved" || e.status === "completed") && isToday(e.time))
+        .reduce((sum, e) => sum + (e.amount || 0), 0),
     [auditLog],
   );
 
@@ -164,16 +166,30 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
         }
         
         const result = await response.json();
+        const orderId = result.orderId || result.razorpayOrderId;
         
         const mappedResult: SubmitResult = {
           decision: result.decision,
           reason: result.reason,
           alternative: result.recoveryProduct,
+          transactionId: result.transactionId,
+          orderId,
+          status: result.status,
+          errorReason: result.errorReason,
+          entry: {
+            id: result.transactionId || "",
+            time: new Date().toISOString(),
+            agent: AGENT_ID,
+            product: product.name,
+            amount: product.price,
+            decision: result.decision,
+            reason: result.reason,
+            hash: "",
+            prevHash: "",
+            orderId,
+            status: result.status,
+          },
         };
-
-        if (result.decision === "approved" || result.decision === "blocked") {
-          return mappedResult;
-        }
 
         if (result.decision === "escalated") {
           const approval: ApprovalItem = {
@@ -184,8 +200,7 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
             amount: product.price,
             reason: result.reason,
           };
-
-          return { ...mappedResult, approval };
+          mappedResult.approval = approval;
         }
 
         return mappedResult;
@@ -216,32 +231,43 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
         }
         
         const result = await response.json();
+        const product = result.parsedProduct;
+        const orderId = result.orderId || result.razorpayOrderId;
         
         const mappedResult: SubmitResult = {
           decision: result.decision,
           reason: result.reason,
           alternative: result.recoveryProduct,
           transactionId: result.transactionId,
+          orderId,
+          status: result.status,
+          errorReason: result.errorReason,
+          parsedProduct: product,
+          entry: product ? {
+            id: result.transactionId || "",
+            time: new Date().toISOString(),
+            agent: AGENT_ID,
+            product: product.name,
+            amount: result.requestedAmount || product.price,
+            decision: result.decision,
+            reason: result.reason,
+            hash: "",
+            prevHash: "",
+            orderId,
+            status: result.status,
+          } : undefined,
         };
 
-        const product = result.parsedProduct;
-        if (!product) return mappedResult; // blocked with no product
-
-        if (result.decision === "approved" || result.decision === "blocked") {
-          return mappedResult;
-        }
-
-        if (result.decision === "escalated") {
+        if (result.decision === "escalated" && product) {
           const approval: ApprovalItem = {
             id: result.transactionId || `apr_${Math.random().toString(36).slice(2, 10)}`,
             time: new Date().toISOString(),
             agent: AGENT_ID,
             product,
-            amount: product.price,
+            amount: result.requestedAmount || product.price,
             reason: result.reason,
           };
-
-          return { ...mappedResult, approval };
+          mappedResult.approval = approval;
         }
 
         return mappedResult;

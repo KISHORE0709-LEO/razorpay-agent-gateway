@@ -1,8 +1,5 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, setDoc, writeBatch } from "firebase/firestore";
-import * as dotenv from "dotenv";
-
-dotenv.config();
 
 const firebaseConfig = {
   apiKey: "AIzaSyCa4S7Nb0qyRTjg7n79pOw5B9tDPN_EelI",
@@ -61,6 +58,18 @@ const seedData = async () => {
     batch.set(prodRef, data);
   }
   await batch.commit();
+
+  // 4. Daily spend document
+  console.log("Seeding daily spend...");
+  const todayStr = new Date().toISOString().split("T")[0];
+  const agentId = "agt_live_7f3c9e";
+  await setDoc(doc(db, `merchants/${merchantId}/dailySpend`, `${agentId}_${todayStr}`), {
+    agentId,
+    date: todayStr,
+    amount: 0,
+    count: 0,
+    updatedAt: new Date().toISOString()
+  });
 
   console.log("Seeding completed successfully.");
   process.exit(0);

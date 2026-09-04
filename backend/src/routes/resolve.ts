@@ -1,6 +1,6 @@
 import { RequestHandler } from "express";
 import { db } from "../firebase";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { doc, getDoc, updateDoc, setDoc } from "firebase/firestore";
 import { createRazorpayOrder } from "../services/razorpay";
 
 export const handleResolve: RequestHandler = async (req, res): Promise<any> => {
@@ -27,20 +27,42 @@ export const handleResolve: RequestHandler = async (req, res): Promise<any> => {
       try {
         const order = await createRazorpayOrder(txData.amount, txData.product);
         await updateDoc(txRef, {
+          decision: "approved",
           status: "completed",
           orderId: order.id,
           razorpayOrderId: order.id,
+          reason: "Approved by merchant",
+          resolvedAt: new Date().toISOString(),
         });
+
+        // Update daily spend document
+        const dateKey = new Date().toISOString().split("T")[0];
+        const agentId = txData.agent || "agt_live_7f3c9e";
+        const dailySpendRef = doc(db, `merchants/demo_merchant/dailySpend/${agentId}_${dateKey}`);
+        const spendSnap = await getDoc(dailySpendRef);
+        const currentSpent = spendSnap.exists() ? Number(spendSnap.data().amount || 0) : 0;
+        const currentCount = spendSnap.exists() ? Number(spendSnap.data().count || 0) : 0;
+        await setDoc(dailySpendRef, {
+          agentId,
+          date: dateKey,
+          amount: currentSpent + Number(txData.amount || 0),
+          count: currentCount + 1,
+          updatedAt: new Date().toISOString(),
+        }, { merge: true });
+
       } catch (err: any) {
         await updateDoc(txRef, {
           status: "failed",
           errorReason: err.message || "Razorpay API error",
+          resolvedAt: new Date().toISOString(),
         });
       }
     } else {
       await updateDoc(txRef, {
+        decision: "blocked",
         status: "denied",
         reason: "Manually denied by merchant",
+        resolvedAt: new Date().toISOString(),
       });
     }
 
