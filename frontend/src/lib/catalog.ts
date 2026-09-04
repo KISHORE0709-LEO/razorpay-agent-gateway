@@ -3,16 +3,16 @@ import { Product } from "./types";
 export const CATEGORIES = ["Electronics", "Fashion", "Groceries", "Home & Kitchen"] as const;
 
 export const CATALOG: Product[] = [
-  { id: "prod_1", name: "Wireless Bluetooth Earbuds", category: "Electronics", price: 1499 },
-  { id: "prod_2", name: "Smart Fitness Watch", category: "Electronics", price: 2999 },
-  { id: "prod_3", name: "Cotton Casual Shirt", category: "Fashion", price: 899 },
-  { id: "prod_4", name: "Running Shoes", category: "Fashion", price: 2499 },
-  { id: "prod_5", name: "Non-Stick Cookware Set", category: "Home & Kitchen", price: 3499 },
-  { id: "prod_6", name: "Electric Kettle", category: "Home & Kitchen", price: 1299 },
-  { id: "prod_7", name: "Premium Basmati Rice 5kg", category: "Groceries", price: 650 },
-  { id: "prod_8", name: "Olive Oil 1L", category: "Groceries", price: 850 },
-  { id: "prod_9", name: "Noise Cancelling Headphones", category: "Electronics", price: 7999 },
-  { id: "prod_10", name: "Formal Leather Belt", category: "Fashion", price: 499 }
+  { id: "prod_1", name: "Wireless Bluetooth Earbuds", category: "Electronics", price: 1499, imageUrl: "https://picsum.photos/seed/prod_1/300/300" },
+  { id: "prod_2", name: "Smart Fitness Watch", category: "Electronics", price: 2999, imageUrl: "https://picsum.photos/seed/prod_2/300/300" },
+  { id: "prod_3", name: "Cotton Casual Shirt", category: "Fashion", price: 899, imageUrl: "https://picsum.photos/seed/prod_3/300/300" },
+  { id: "prod_4", name: "Running Shoes", category: "Fashion", price: 2499, imageUrl: "https://picsum.photos/seed/prod_4/300/300" },
+  { id: "prod_5", name: "Non-Stick Cookware Set", category: "Home & Kitchen", price: 3499, imageUrl: "https://picsum.photos/seed/prod_5/300/300" },
+  { id: "prod_6", name: "Electric Kettle", category: "Home & Kitchen", price: 1299, imageUrl: "https://picsum.photos/seed/prod_6/300/300" },
+  { id: "prod_7", name: "Premium Basmati Rice 5kg", category: "Groceries", price: 650, imageUrl: "https://picsum.photos/seed/prod_7/300/300" },
+  { id: "prod_8", name: "Olive Oil 1L", category: "Groceries", price: 850, imageUrl: "https://picsum.photos/seed/prod_8/300/300" },
+  { id: "prod_9", name: "Noise Cancelling Headphones", category: "Electronics", price: 7999, imageUrl: "https://picsum.photos/seed/prod_9/300/300" },
+  { id: "prod_10", name: "Formal Leather Belt", category: "Fashion", price: 499, imageUrl: "https://picsum.photos/seed/prod_10/300/300" }
 ];
 
 const PRODUCT_KEYWORDS: { keywords: string[]; productId: string }[] = [

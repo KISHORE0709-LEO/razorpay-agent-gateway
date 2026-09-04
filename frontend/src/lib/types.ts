@@ -11,9 +11,11 @@ export interface Product {
   name: string;
   category: string;
   price: number;
+  imageUrl?: string;
+  stock?: number;
 }
 
-export type Decision = "approved" | "recovered" | "escalated" | "blocked";
+export type Decision = "approved" | "recovered" | "escalated" | "blocked" | "not_found" | "conversational";
 
 export interface AuditEntry {
   id: string;

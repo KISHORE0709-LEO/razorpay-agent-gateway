@@ -7,10 +7,9 @@ import {
   useState,
   useEffect,
 } from "react";
-import { GENESIS_HASH } from "./hash";
 import { ApprovalItem, AuditEntry, Decision, Product, Rules } from "./types";
 import { db } from "./firebase";
-import { doc, getDoc, query, collection, where, orderBy, onSnapshot } from "firebase/firestore";
+import { doc, query, collection, where, onSnapshot } from "firebase/firestore";
 
 export const AGENT_ID = "agt_live_7f3c9e";
 
@@ -43,6 +42,10 @@ export interface SubmitResult {
   status?: string;
   errorReason?: string;
   parsedProduct?: Product;
+  suggestions?: Product[];
+  conversationalReply?: string;
+  time?: string;
+  priceNote?: string;
 }
 
 export interface FirewallStore {
@@ -57,20 +60,26 @@ export interface FirewallStore {
   auditLog: AuditEntry[];
   approvals: any[];
   dailySpent: number;
+  resolveApproval: (id: string, approve: boolean) => Promise<SubmitResult | undefined>;
 
   submitRequest: (product: Product) => Promise<SubmitResult>;
   sendChatRequest: (message: string) => Promise<SubmitResult>;
-  resolveApproval: (id: string, approve: boolean) => Promise<SubmitResult | undefined>;
+
+  latestDecision: Decision | null;
+  latestTxnId: string | null;
 }
 
 const FirewallContext = createContext<FirewallStore | null>(null);
 
 export function FirewallProvider({ children }: { children: ReactNode }) {
-  const [isLoggedIn, setIsLoggedIn] = useState(() => sessionStorage.getItem("sentrypay-session") === "active");
-  const [merchantEmail, setMerchantEmail] = useState<string | null>(() => sessionStorage.getItem("sentrypay-email"));
+  const [isLoggedIn, setIsLoggedIn] = useState(true);
+  const [merchantEmail, setMerchantEmail] = useState<string | null>("demo@razorpay.com");
   const [rules, setRules] = useState<Rules>(DEFAULT_RULES);
   const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
   const [approvals, setApprovals] = useState<any[]>([]);
+
+  const latestDecision = auditLog[0]?.decision || null;
+  const latestTxnId = auditLog[0]?.id || null;
 
   useEffect(() => {
     const txnsRef = collection(db, "merchants/demo_merchant/transactions");
@@ -82,16 +91,17 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
     );
     const unsubApprovals = onSnapshot(qApprovals, (snap) => {
       const items = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() } as any));
-      items.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+      items.sort((a, b) => new Date(b.time || 0).getTime() - new Date(a.time || 0).getTime());
       setApprovals(items);
     }, (err) => {
       console.warn("Approvals snapshot warning:", err);
     });
 
-    // Live listener for audit trail (ordered newest first)
-    const qAudit = query(txnsRef, orderBy("time", "desc"));
-    const unsubAudit = onSnapshot(qAudit, (snap) => {
-      setAuditLog(snap.docs.map((doc) => ({ id: doc.id, ...doc.data() } as AuditEntry)));
+    // Live listener for audit trail without composite index requirements
+    const unsubAudit = onSnapshot(txnsRef, (snap) => {
+      const items = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() } as AuditEntry));
+      items.sort((a, b) => new Date(b.time || 0).getTime() - new Date(a.time || 0).getTime());
+      setAuditLog(items);
     }, (err) => {
       console.warn("Audit snapshot warning:", err);
     });
@@ -103,10 +113,10 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    async function loadRules() {
-      try {
-        const rulesRef = doc(db, "merchants/demo_merchant/rules/current");
-        const snap = await getDoc(rulesRef);
+    const rulesRef = doc(db, "merchants/demo_merchant/rules/current");
+    const unsub = onSnapshot(
+      rulesRef,
+      (snap) => {
         if (snap.exists()) {
           const data = snap.data();
           setRules({
@@ -117,11 +127,13 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
             maxDiscount: data.maxDiscountPercent ?? DEFAULT_RULES.maxDiscount,
           });
         }
-      } catch (error) {
-        console.error("Failed to load rules from Firestore:", error);
+      },
+      (error) => {
+        console.error("Rules snapshot listener error:", error);
       }
-    }
-    loadRules();
+    );
+
+    return () => unsub();
   }, []);
 
   const dailySpent = useMemo(
@@ -231,6 +243,25 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
         }
         
         const result = await response.json();
+
+        // 1. Conversational greeting or non-purchase message
+        if (result.decision === "conversational") {
+          return {
+            decision: "conversational",
+            reason: result.message || "Hello! How can I help you?",
+            conversationalReply: result.message
+          };
+        }
+
+        // 2. Product not found in catalog (neutral outcome, no transaction logged)
+        if (result.decision === "not_found") {
+          return {
+            decision: "not_found",
+            reason: result.reason || "I couldn't find a matching product — try one of our catalog items below:",
+            suggestions: result.suggestions || []
+          };
+        }
+
         const product = result.parsedProduct;
         const orderId = result.orderId || result.razorpayOrderId;
         
@@ -243,16 +274,18 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
           status: result.status,
           errorReason: result.errorReason,
           parsedProduct: product,
+          time: result.time || new Date().toISOString(),
+          priceNote: result.priceNote,
           entry: product ? {
             id: result.transactionId || "",
-            time: new Date().toISOString(),
+            time: result.time || new Date().toISOString(),
             agent: AGENT_ID,
             product: product.name,
             amount: result.requestedAmount || product.price,
             decision: result.decision,
             reason: result.reason,
-            hash: "",
-            prevHash: "",
+            hash: result.hash || "",
+            prevHash: result.prevHash || "",
             orderId,
             status: result.status,
           } : undefined,
@@ -312,6 +345,8 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
     submitRequest,
     sendChatRequest,
     resolveApproval,
+    latestDecision,
+    latestTxnId,
   };
 
   return (

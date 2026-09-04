@@ -38,16 +38,16 @@ const seedData = async () => {
 
   // 3. Catalog (8-10 products)
   const products = [
-    { id: "prod_1", name: "Wireless Bluetooth Earbuds", price: 1499, category: "Electronics", stock: 50, imageUrl: "https://example.com/earbuds.jpg" },
-    { id: "prod_2", name: "Smart Fitness Watch", price: 2999, category: "Electronics", stock: 30, imageUrl: "https://example.com/watch.jpg" },
-    { id: "prod_3", name: "Cotton Casual Shirt", price: 899, category: "Fashion", stock: 100, imageUrl: "https://example.com/shirt.jpg" },
-    { id: "prod_4", name: "Running Shoes", price: 2499, category: "Fashion", stock: 40, imageUrl: "https://example.com/shoes.jpg" },
-    { id: "prod_5", name: "Non-Stick Cookware Set", price: 3499, category: "Home & Kitchen", stock: 25, imageUrl: "https://example.com/cookware.jpg" },
-    { id: "prod_6", name: "Electric Kettle", price: 1299, category: "Home & Kitchen", stock: 60, imageUrl: "https://example.com/kettle.jpg" },
-    { id: "prod_7", name: "Premium Basmati Rice 5kg", price: 650, category: "Groceries", stock: 200, imageUrl: "https://example.com/rice.jpg" },
-    { id: "prod_8", name: "Olive Oil 1L", price: 850, category: "Groceries", stock: 150, imageUrl: "https://example.com/oil.jpg" },
-    { id: "prod_9", name: "Noise Cancelling Headphones", price: 7999, category: "Electronics", stock: 15, imageUrl: "https://example.com/headphones.jpg" },
-    { id: "prod_10", name: "Formal Leather Belt", price: 499, category: "Fashion", stock: 80, imageUrl: "https://example.com/belt.jpg" }
+    { id: "prod_1", name: "Wireless Bluetooth Earbuds", price: 1499, category: "Electronics", stock: 50, imageUrl: "https://picsum.photos/seed/prod_1/300/300" },
+    { id: "prod_2", name: "Smart Fitness Watch", price: 2999, category: "Electronics", stock: 30, imageUrl: "https://picsum.photos/seed/prod_2/300/300" },
+    { id: "prod_3", name: "Cotton Casual Shirt", price: 899, category: "Fashion", stock: 100, imageUrl: "https://picsum.photos/seed/prod_3/300/300" },
+    { id: "prod_4", name: "Running Shoes", price: 2499, category: "Fashion", stock: 40, imageUrl: "https://picsum.photos/seed/prod_4/300/300" },
+    { id: "prod_5", name: "Non-Stick Cookware Set", price: 3499, category: "Home & Kitchen", stock: 25, imageUrl: "https://picsum.photos/seed/prod_5/300/300" },
+    { id: "prod_6", name: "Electric Kettle", price: 1299, category: "Home & Kitchen", stock: 60, imageUrl: "https://picsum.photos/seed/prod_6/300/300" },
+    { id: "prod_7", name: "Premium Basmati Rice 5kg", price: 650, category: "Groceries", stock: 200, imageUrl: "https://picsum.photos/seed/prod_7/300/300" },
+    { id: "prod_8", name: "Olive Oil 1L", price: 850, category: "Groceries", stock: 150, imageUrl: "https://picsum.photos/seed/prod_8/300/300" },
+    { id: "prod_9", name: "Noise Cancelling Headphones", price: 7999, category: "Electronics", stock: 15, imageUrl: "https://picsum.photos/seed/prod_9/300/300" },
+    { id: "prod_10", name: "Formal Leather Belt", price: 499, category: "Fashion", stock: 80, imageUrl: "https://picsum.photos/seed/prod_10/300/300" }
   ];
 
   console.log("Seeding catalog...");

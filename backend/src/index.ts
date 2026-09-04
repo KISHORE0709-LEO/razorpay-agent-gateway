@@ -5,6 +5,8 @@ import { handleDemo } from "./routes/demo";
 import { handleEvaluate } from "./routes/evaluate";
 import { handleChat } from "./routes/chat";
 import { handleResolve } from "./routes/resolve";
+import { handleGetRules, handleSaveRules } from "./routes/rules";
+import { handleDeleteSession, handleGetSession, handleListSessions, handleSaveSession } from "./routes/sessions";
 
 export const app = express();
 
@@ -23,6 +25,14 @@ app.get("/api/demo", handleDemo);
 app.post("/api/evaluate", handleEvaluate);
 app.post("/api/chat", handleChat);
 app.post("/api/resolve", handleResolve);
+app.get("/api/rules", handleGetRules);
+app.post("/api/rules", handleSaveRules);
+
+// Chat session routes
+app.get("/api/chat/sessions", handleListSessions);
+app.get("/api/chat/sessions/:sessionId", handleGetSession);
+app.post("/api/chat/sessions", handleSaveSession);
+app.delete("/api/chat/sessions/:sessionId", handleDeleteSession);
 
 const PORT = process.env.PORT || 8080;
 // Only listen if not imported by node-build.ts

@@ -1,5 +1,5 @@
 import { db } from "../firebase";
-import { collection, doc, getDoc, getDocs, limit, orderBy, query, setDoc, where, addDoc } from "firebase/firestore";
+import { collection, doc, getDoc, getDocFromServer, getDocs, limit, orderBy, query, setDoc, where, addDoc } from "firebase/firestore";
 import * as crypto from "crypto";
 import { createRazorpayOrder } from "./razorpay";
 
@@ -17,13 +17,13 @@ export async function evaluatePurchaseRequest(
   requestedAmount: number,
   overrideDecision?: "approved" | "blocked"
 ) {
-  // 1. Fetch rules and product
+  // 1. Fetch rules and product FRESH from Firestore server (no in-memory cache)
   const rulesRef = doc(db, `merchants/${merchantId}/rules/current`);
   const productRef = doc(db, `merchants/${merchantId}/catalog/${productId}`);
   
   const [rulesSnap, productSnap] = await Promise.all([
-    getDoc(rulesRef),
-    getDoc(productRef)
+    getDocFromServer(rulesRef),
+    getDocFromServer(productRef)
   ]);
 
   if (!rulesSnap.exists()) {
@@ -43,7 +43,7 @@ export async function evaluatePurchaseRequest(
   const dateKey = new Date().toISOString().split("T")[0];
   const dailySpendDocId = `${agentId}_${dateKey}`;
   const dailySpendRef = doc(db, `merchants/${merchantId}/dailySpend/${dailySpendDocId}`);
-  const dailySpendSnap = await getDoc(dailySpendRef);
+  const dailySpendSnap = await getDocFromServer(dailySpendRef);
   let todaySpent = 0;
   let todayCount = 0;
   if (dailySpendSnap.exists()) {
@@ -57,7 +57,12 @@ export async function evaluatePurchaseRequest(
     reason = overrideDecision === "approved" ? "Approved by merchant" : "Manually denied by merchant";
   } else {
     // 2. Check category allow-list (FIRST)
-    if (!rules.allowedCategories.includes(product.category)) {
+    const allowed = Array.isArray(rules.allowedCategories)
+      ? rules.allowedCategories.map((c: any) => String(c || "").trim().toLowerCase())
+      : [];
+    const productCat = String(product.category || "").trim().toLowerCase();
+
+    if (!allowed.includes(productCat)) {
       decision = "blocked";
       reason = `Category '${product.category}' not in merchant's allow-list`;
     } 
@@ -183,6 +188,9 @@ export async function evaluatePurchaseRequest(
     orderId: txnData.orderId,
     razorpayOrderId: txnData.razorpayOrderId,
     errorReason: txnData.errorReason,
-    transactionId: docRef.id
+    transactionId: docRef.id,
+    time: txnData.time,
+    hash,
+    prevHash
   };
 }

@@ -1,10 +1,11 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { db } from "@/lib/firebase";
-import { doc, setDoc, onSnapshot } from "firebase/firestore";
+import { doc, setDoc, onSnapshot, collection, deleteDoc, getDocFromServer } from "firebase/firestore";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
+  AlertTriangle,
   ArrowUpRight,
   Ban,
   Bot,
@@ -13,25 +14,43 @@ import {
   ChevronRight,
   Clock3,
   Copy,
+  Edit3,
+  HelpCircle,
   LayoutDashboard,
   LogOut,
   Menu,
+  MessageSquare,
+  Package,
+  PanelLeft,
+  PanelLeftClose,
+  Plus,
   RefreshCw,
   Save,
+  Search,
   Settings2,
   ShieldCheck,
+  Trash2,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CATEGORIES } from "@/lib/catalog";
 import { AGENT_ID, useFirewall, SubmitResult } from "@/lib/store";
-import { Decision, Rules } from "@/lib/types";
+import { Decision, Product, Rules } from "@/lib/types";
 import { GENESIS_HASH, computeTxnHash } from "@/lib/hash";
+import {
+  ChatMessage,
+  ChatSession,
+  createNewSessionObject,
+  persistSession,
+  subscribeSessions,
+  removeSession,
+} from "@/lib/sessions";
 
 const NAV = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "chat", label: "AI Buyer", icon: Bot },
   { id: "rules", label: "Firewall Rules", icon: Settings2 },
+  { id: "catalog", label: "Catalog", icon: Package },
   { id: "approvals", label: "Approval Queue", icon: Clock3 },
   { id: "audit", label: "Audit Trail", icon: Activity },
 ] as const;
@@ -80,10 +99,17 @@ export default function Dashboard() {
       </aside>
       <div className={cn("min-w-0 flex-1 transition-[padding] duration-300 ease-out", sidebarOpen ? "pl-72" : "pl-0")}>
         <header className="flex h-20 items-center justify-between border-b border-border bg-card px-5 sm:px-8">
-          <div className="flex items-center gap-3"><div className="flex items-center gap-1"><button onClick={() => setSidebarOpen((open) => !open)} className="rounded-lg p-2 text-muted-foreground transition hover:bg-muted hover:text-brand-navy" title={sidebarOpen ? "Close sidebar" : "Open sidebar"}><Menu className="h-4 w-4" /></button></div><div><div className="text-xs text-muted-foreground">Merchant workspace /</div><h1 className="text-lg font-semibold capitalize">{tab === "chat" ? "AI Buyer" : tab === "rules" ? "Firewall Rules" : tab === "audit" ? "Audit Trail" : tab === "approvals" ? "Approval Queue" : "Overview"}</h1></div></div>
+          <div className="flex items-center gap-3"><div className="flex items-center gap-1"><button onClick={() => setSidebarOpen((open) => !open)} className="rounded-lg p-2 text-muted-foreground transition hover:bg-muted hover:text-brand-navy" title={sidebarOpen ? "Close sidebar" : "Open sidebar"}><Menu className="h-4 w-4" /></button></div><div><div className="text-xs text-muted-foreground">Merchant workspace /</div><h1 className="text-lg font-semibold capitalize">{tab === "chat" ? "AI Buyer" : tab === "rules" ? "Firewall Rules" : tab === "catalog" ? "Product Catalog" : tab === "audit" ? "Audit Trail" : tab === "approvals" ? "Approval Queue" : "Overview"}</h1></div></div>
           <div className="flex items-center gap-3"><div className="hidden items-center gap-2 rounded-full border border-success/20 bg-success/10 px-3 py-1.5 text-xs font-medium text-success sm:flex"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-success" />System operational</div><div className="h-8 w-8 rounded-full bg-brand-blue/10 text-center text-xs leading-8 font-semibold text-brand-navy">{merchantEmail?.[0]?.toUpperCase() ?? "M"}</div></div>
         </header>
-        <main className="mx-auto max-w-[1500px] p-5 sm:p-8">{tab === "overview" && <Overview onTab={setTab} />}{tab === "chat" && <BuyerChat />}{tab === "rules" && <RulesPanel />}{tab === "approvals" && <ApprovalsPanel />}{tab === "audit" && <AuditPanel />}</main>
+        <main className="mx-auto max-w-[1500px] p-5 sm:p-8">
+          {tab === "overview" && <Overview onTab={setTab} />}
+          {tab === "chat" && <BuyerChat />}
+          {tab === "rules" && <RulesPanel />}
+          {tab === "catalog" && <CatalogPanel />}
+          {tab === "approvals" && <ApprovalsPanel />}
+          {tab === "audit" && <AuditPanel />}
+        </main>
       </div>
     </div>
   );
@@ -273,49 +299,157 @@ function MiniFlow({ latestDecision, latestTxnId }: { latestDecision: string | nu
 function FlowPill({ icon: Icon, label, active }: { icon: typeof Bot; label: string; active?: boolean }) { return <div className={cn("flex items-center gap-2 rounded-lg border px-3 py-2", active ? "border-brand-blue/30 bg-brand-blue/10 text-brand-blue" : "border-border bg-card text-muted-foreground")}><Icon className="h-3.5 w-3.5" /><span className="font-medium">{label}</span></div> }
 
 function RulesPanel() {
-  const { rules, setRules } = useFirewall();
-  const [draft, setDraft] = useState<Rules>(rules);
+  const { setRules } = useFirewall();
+  const [draft, setDraft] = useState<Rules | null>(null);
+  const [loading, setLoading] = useState(true);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
-  
-  useEffect(() => {
-    setDraft(rules);
-  }, [rules]);
+  const [error, setError] = useState<string | null>(null);
 
-  function update<K extends keyof Rules>(key: K, value: Rules[K]) { 
-    setDraft((d) => ({ ...d, [key]: value })); 
-    setSaved(false); 
+  // Fresh read from Firestore server on mount — no stale cache or component defaults
+  useEffect(() => {
+    let active = true;
+    async function fetchFreshRules() {
+      setLoading(true);
+      setError(null);
+      try {
+        const rulesRef = doc(db, "merchants/demo_merchant/rules/current");
+        let serverRules: Rules | null = null;
+        try {
+          const snap = await getDocFromServer(rulesRef);
+          if (snap.exists()) {
+            const data = snap.data();
+            serverRules = {
+              maxOrder: Number(data.maxOrderAmount ?? 5000),
+              dailyLimit: Number(data.dailySpendLimit ?? 20000),
+              categories: Array.isArray(data.allowedCategories) ? data.allowedCategories : ["Electronics", "Fashion", "Home & Kitchen", "Groceries"],
+              approvalAbove: Number(data.approvalThreshold ?? 2000),
+              maxDiscount: Number(data.maxDiscountPercent ?? 10),
+            };
+          }
+        } catch (serverErr) {
+          console.warn("Direct Firestore getDocFromServer fallback to /api/rules:", serverErr);
+          const res = await fetch("/api/rules?merchantId=demo_merchant");
+          if (res.ok) {
+            const data = await res.json();
+            serverRules = {
+              maxOrder: Number(data.maxOrderAmount ?? 5000),
+              dailyLimit: Number(data.dailySpendLimit ?? 20000),
+              categories: Array.isArray(data.allowedCategories) ? data.allowedCategories : ["Electronics", "Fashion", "Home & Kitchen", "Groceries"],
+              approvalAbove: Number(data.approvalThreshold ?? 2000),
+              maxDiscount: Number(data.maxDiscountPercent ?? 10),
+            };
+          } else {
+            throw new Error(`Failed to load fresh rules: ${res.statusText}`);
+          }
+        }
+
+        if (active && serverRules) {
+          setDraft(serverRules);
+          setRules(serverRules);
+        }
+      } catch (err: any) {
+        console.error("Error fetching fresh rules:", err);
+        if (active) {
+          setError(err?.message || "Failed to load rules fresh from server");
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+
+    fetchFreshRules();
+    return () => {
+      active = false;
+    };
+  }, [setRules]);
+
+  function update<K extends keyof Rules>(key: K, value: Rules[K]) {
+    setDraft((d) => (d ? { ...d, [key]: value } : null));
+    setSaved(false);
+    setError(null);
   }
-  
-  async function save(event: FormEvent) { 
-    event.preventDefault(); 
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    if (!draft) return;
     setSaving(true);
+    setError(null);
+    setSaved(false);
+
     try {
       const rulesRef = doc(db, "merchants/demo_merchant/rules/current");
-      await setDoc(rulesRef, {
-        maxOrderAmount: draft.maxOrder,
-        dailySpendLimit: draft.dailyLimit,
+      const rulesPayload = {
+        maxOrderAmount: Number(draft.maxOrder),
+        dailySpendLimit: Number(draft.dailyLimit),
         allowedCategories: draft.categories,
-        approvalThreshold: draft.approvalAbove,
-        maxDiscountPercent: draft.maxDiscount,
-        updatedAt: new Date().toISOString()
-      }, { merge: true });
-      setRules(draft); 
-      setSaved(true); 
+        approvalThreshold: Number(draft.approvalAbove),
+        maxDiscountPercent: Number(draft.maxDiscount),
+        updatedAt: new Date().toISOString(),
+      };
+
+      // 1. Direct write to Firestore
+      await setDoc(rulesRef, rulesPayload, { merge: true });
+
+      // 2. Also sync to backend API endpoint to ensure server-side cache invalidation and verify
+      const apiRes = await fetch("/api/rules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          merchantId: "demo_merchant",
+          rules: rulesPayload,
+        }),
+      });
+
+      if (!apiRes.ok) {
+        const errData = await apiRes.json().catch(() => ({}));
+        throw new Error(errData.error || `Server returned error ${apiRes.status}`);
+      }
+
+      setRules(draft);
+      setSaved(true);
       setTimeout(() => setSaved(false), 4000);
-    } catch (err) {
-      console.error("Error saving rules to Firestore:", err);
+    } catch (err: any) {
+      console.error("Error saving rules:", err);
+      setError(err?.message || "Failed to persist rules to Firestore");
     } finally {
       setSaving(false);
     }
   }
 
+  if (loading || !draft) {
+    return (
+      <div className="mx-auto max-w-3xl rounded-2xl border border-brand-blue/20 bg-card p-12 text-center">
+        <RefreshCw className="mx-auto h-8 w-8 animate-spin text-brand-blue" />
+        <p className="mt-4 text-sm font-medium text-brand-navy">Fetching fresh rules from Firestore...</p>
+        <p className="mt-1 text-xs text-muted-foreground">Reading latest policy document directly from server</p>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-3xl space-y-7">
-      <div>
-        <p className="text-sm text-muted-foreground">Control what your agents can spend</p>
-        <h2 className="mt-1 text-2xl font-bold tracking-tight text-brand-navy">Firewall rules</h2>
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm text-muted-foreground">Control what your agents can spend</p>
+          <h2 className="mt-1 text-2xl font-bold tracking-tight text-brand-navy">Firewall rules</h2>
+        </div>
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-700">
+          <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+          Server Synced
+        </span>
       </div>
+
+      {error && (
+        <div className="flex items-center gap-3 rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-700">
+          <AlertTriangle className="h-5 w-5 shrink-0 text-rose-600" />
+          <div>
+            <p className="font-semibold">Failed to save rules</p>
+            <p className="text-xs">{error}</p>
+          </div>
+        </div>
+      )}
+
       <form onSubmit={save} className="rounded-2xl border border-brand-blue/20 bg-card p-6 sm:p-8">
         <div className="grid gap-6 sm:grid-cols-2">
           <NumberField label="Max order amount" hint="Hard cap per transaction" value={draft.maxOrder} onChange={(v) => update("maxOrder", v)} />
@@ -343,7 +477,7 @@ function RulesPanel() {
             Rules saved successfully to Firestore!
           </span>
           <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-brand-blue px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50">
-            <Save className="h-4 w-4" />
+            {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             {saving ? "Saving..." : "Save rules"}
           </button>
         </div>
@@ -369,137 +503,1083 @@ function NumberField({ label, hint, value, suffix = "₹", onChange }: { label: 
   );
 }
 
+function CatalogPanel() {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [selectedCat, setSelectedCat] = useState("All");
+
+  // Add / Edit Modal state
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<Product | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  // Form draft state
+  const [form, setForm] = useState<{
+    name: string;
+    category: string;
+    customCategory: string;
+    price: string | number;
+    stock: string | number;
+    imageUrl: string;
+  }>({
+    name: "",
+    category: "Electronics",
+    customCategory: "",
+    price: "",
+    stock: "50",
+    imageUrl: "",
+  });
+
+  // Delete modal state
+  const [deleteItem, setDeleteItem] = useState<Product | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // Toast message state
+  const [toast, setToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    const catalogRef = collection(db, "merchants/demo_merchant/catalog");
+    const unsub = onSnapshot(
+      catalogRef,
+      (snap) => {
+        const items = snap.docs.map(
+          (d) =>
+            ({
+              id: d.id,
+              ...d.data(),
+            } as Product),
+        );
+        items.sort((a, b) => a.name.localeCompare(b.name));
+        setProducts(items);
+        setLoading(false);
+      },
+      (err) => {
+        console.error("Error listening to catalog in Firestore:", err);
+        setLoading(false);
+      },
+    );
+    return () => unsub();
+  }, []);
+
+  // Compute summary stats
+  const totalProducts = products.length;
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    products.forEach((p) => {
+      if (p.category) set.add(p.category);
+    });
+    // Ensure default categories are available in dropdown
+    CATEGORIES.forEach((c) => set.add(c));
+    return Array.from(set);
+  }, [products]);
+
+  const totalCategories = useMemo(() => {
+    const set = new Set<string>();
+    products.forEach((p) => {
+      if (p.category) set.add(p.category);
+    });
+    return set.size;
+  }, [products]);
+
+  const { minPrice, maxPrice, totalStock } = useMemo(() => {
+    if (products.length === 0) return { minPrice: 0, maxPrice: 0, totalStock: 0 };
+    let min = Infinity;
+    let max = -Infinity;
+    let stock = 0;
+    products.forEach((p) => {
+      if (p.price < min) min = p.price;
+      if (p.price > max) max = p.price;
+      stock += p.stock ?? 0;
+    });
+    return {
+      minPrice: min === Infinity ? 0 : min,
+      maxPrice: max === -Infinity ? 0 : max,
+      totalStock: stock,
+    };
+  }, [products]);
+
+  const priceRange = products.length
+    ? `₹${minPrice.toLocaleString("en-IN")} – ₹${maxPrice.toLocaleString("en-IN")}`
+    : "₹0";
+
+  // Filtered products
+  const filteredProducts = useMemo(() => {
+    return products.filter((p) => {
+      const matchSearch =
+        search.trim() === "" ||
+        p.name.toLowerCase().includes(search.toLowerCase()) ||
+        p.category.toLowerCase().includes(search.toLowerCase());
+      const matchCat = selectedCat === "All" || p.category === selectedCat;
+      return matchSearch && matchCat;
+    });
+  }, [products, search, selectedCat]);
+
+  function openAddModal() {
+    setEditingItem(null);
+    setForm({
+      name: "",
+      category: categories[0] || "Electronics",
+      customCategory: "",
+      price: "",
+      stock: "50",
+      imageUrl: "",
+    });
+    setModalOpen(true);
+  }
+
+  function openEditModal(prod: Product) {
+    setEditingItem(prod);
+    setForm({
+      name: prod.name,
+      category: categories.includes(prod.category) ? prod.category : "__CUSTOM__",
+      customCategory: categories.includes(prod.category) ? "" : prod.category,
+      price: prod.price,
+      stock: prod.stock ?? 0,
+      imageUrl: prod.imageUrl || "",
+    });
+    setModalOpen(true);
+  }
+
+  async function handleSave(e: FormEvent) {
+    e.preventDefault();
+    if (!form.name.trim() || !form.price) return;
+    setSaving(true);
+    try {
+      const finalCategory =
+        form.category === "__CUSTOM__"
+          ? form.customCategory.trim() || "General"
+          : form.category;
+
+      const prodId = editingItem ? editingItem.id : `prod_${Date.now()}`;
+      const placeholderImg = `https://picsum.photos/seed/${encodeURIComponent(
+        form.name.trim(),
+      )}/300/300`;
+      const finalImg = form.imageUrl.trim() || (editingItem?.imageUrl || placeholderImg);
+
+      const data = {
+        name: form.name.trim(),
+        category: finalCategory,
+        price: Number(form.price) || 0,
+        stock: Number(form.stock) || 0,
+        imageUrl: finalImg,
+        updatedAt: new Date().toISOString(),
+      };
+
+      await setDoc(doc(db, "merchants/demo_merchant/catalog", prodId), data, {
+        merge: true,
+      });
+
+      setModalOpen(false);
+      setToast(
+        editingItem
+          ? `"${form.name}" updated successfully!`
+          : `"${form.name}" added to catalog!`,
+      );
+      setTimeout(() => setToast(null), 4000);
+    } catch (err) {
+      console.error("Error saving product to Firestore:", err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!deleteItem) return;
+    setDeleting(true);
+    try {
+      await deleteDoc(doc(db, "merchants/demo_merchant/catalog", deleteItem.id));
+      const deletedName = deleteItem.name;
+      setDeleteItem(null);
+      setToast(`"${deletedName}" removed from catalog.`);
+      setTimeout(() => setToast(null), 4000);
+    } catch (err) {
+      console.error("Error deleting product from Firestore:", err);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <div className="mx-auto max-w-6xl space-y-7">
+      {/* Header */}
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+        <div>
+          <p className="text-sm text-muted-foreground">Manage your store's inventory and products</p>
+          <h2 className="mt-1 text-2xl font-bold tracking-tight text-brand-navy">Product Catalog</h2>
+        </div>
+        <button
+          onClick={openAddModal}
+          className="inline-flex items-center gap-2 rounded-xl bg-brand-blue px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 shadow-sm"
+        >
+          <Plus className="h-4 w-4" />
+          Add product
+        </button>
+      </div>
+
+      {/* Summary Stat Cards */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-2xl border border-brand-blue/20 bg-card p-5">
+          <div className="flex items-center justify-between text-muted-foreground text-xs font-semibold uppercase tracking-wider">
+            <span>Total Products</span>
+            <Package className="h-4 w-4 text-brand-blue" />
+          </div>
+          <div className="mt-4 text-2xl font-bold font-mono text-brand-navy">{totalProducts}</div>
+          <div className="mt-1 text-xs text-muted-foreground">Active in catalog</div>
+        </div>
+
+        <div className="rounded-2xl border border-brand-blue/20 bg-card p-5">
+          <div className="flex items-center justify-between text-muted-foreground text-xs font-semibold uppercase tracking-wider">
+            <span>Total Categories</span>
+            <LayoutDashboard className="h-4 w-4 text-brand-blue" />
+          </div>
+          <div className="mt-4 text-2xl font-bold font-mono text-brand-navy">{totalCategories}</div>
+          <div className="mt-1 text-xs text-muted-foreground truncate" title={categories.join(", ")}>
+            Across {categories.length} category types
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-brand-blue/20 bg-card p-5">
+          <div className="flex items-center justify-between text-muted-foreground text-xs font-semibold uppercase tracking-wider">
+            <span>Price Range</span>
+            <ShieldCheck className="h-4 w-4 text-brand-blue" />
+          </div>
+          <div className="mt-4 text-2xl font-bold font-mono text-brand-navy">{priceRange}</div>
+          <div className="mt-1 text-xs text-muted-foreground">Min to max item price</div>
+        </div>
+
+        <div className="rounded-2xl border border-brand-blue/20 bg-card p-5">
+          <div className="flex items-center justify-between text-muted-foreground text-xs font-semibold uppercase tracking-wider">
+            <span>Total Stock</span>
+            <Activity className="h-4 w-4 text-brand-blue" />
+          </div>
+          <div className="mt-4 text-2xl font-bold font-mono text-brand-navy">{totalStock.toLocaleString("en-IN")} units</div>
+          <div className="mt-1 text-xs text-muted-foreground">Available inventory</div>
+        </div>
+      </div>
+
+      {/* Search & Filter Bar */}
+      <div className="rounded-2xl border border-brand-blue/20 bg-card p-4 sm:p-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="Search by product name or category..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-10 w-full rounded-xl border border-border bg-background pl-10 pr-4 text-sm text-brand-navy outline-none transition focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/15"
+          />
+        </div>
+
+        {/* Category Pills */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 text-xs">
+          <button
+            onClick={() => setSelectedCat("All")}
+            className={cn(
+              "px-3 py-1.5 rounded-lg font-medium transition whitespace-nowrap",
+              selectedCat === "All"
+                ? "bg-brand-blue text-white"
+                : "bg-muted text-muted-foreground hover:text-foreground"
+            )}
+          >
+            All ({products.length})
+          </button>
+          {categories.map((cat) => {
+            const count = products.filter((p) => p.category === cat).length;
+            return (
+              <button
+                key={cat}
+                onClick={() => setSelectedCat(cat)}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg font-medium transition whitespace-nowrap",
+                  selectedCat === cat
+                    ? "bg-brand-blue text-white"
+                    : "bg-muted text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {cat} ({count})
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Notification Toast */}
+      {toast && (
+        <div className="flex items-center gap-2 rounded-xl bg-success/15 border border-success/30 px-4 py-3 text-xs font-semibold text-success animate-in fade-in slide-in-from-top-2">
+          <Check className="h-4 w-4" />
+          <span>{toast}</span>
+        </div>
+      )}
+
+      {/* Catalog Grid */}
+      {loading ? (
+        <div className="rounded-2xl border border-brand-blue/20 bg-card p-12 text-center text-sm text-muted-foreground flex flex-col items-center gap-2">
+          <RefreshCw className="h-5 w-5 animate-spin text-brand-blue" />
+          Loading merchant catalog from Firestore...
+        </div>
+      ) : filteredProducts.length === 0 ? (
+        <div className="rounded-2xl border border-border bg-card p-12 text-center space-y-3">
+          <Package className="mx-auto h-8 w-8 text-muted-foreground/50" />
+          <p className="text-sm font-medium text-brand-navy">No products found</p>
+          <p className="text-xs text-muted-foreground">
+            {search || selectedCat !== "All"
+              ? "Try adjusting your search terms or filter."
+              : "Your catalog is empty. Add your first product to get started."}
+          </p>
+          {(search || selectedCat !== "All") && (
+            <button
+              onClick={() => {
+                setSearch("");
+                setSelectedCat("All");
+              }}
+              className="text-xs font-semibold text-brand-blue hover:underline"
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {filteredProducts.map((product) => (
+            <div
+              key={product.id}
+              className="group rounded-2xl border border-brand-blue/20 bg-card overflow-hidden transition-all duration-200 hover:border-brand-blue/50 hover:shadow-lg flex flex-col justify-between"
+            >
+              <div>
+                {/* Thumbnail Image Container */}
+                <div className="relative h-44 w-full bg-muted/60 overflow-hidden">
+                  <img
+                    src={product.imageUrl || `https://picsum.photos/seed/${product.id}/300/300`}
+                    alt={product.name}
+                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    onError={(e) => {
+                      (e.target as HTMLElement).style.display = "none";
+                    }}
+                  />
+                  <span className="absolute top-3 left-3 rounded-full bg-black/60 backdrop-blur-md px-2.5 py-0.5 text-[11px] font-medium text-white shadow-sm">
+                    {product.category}
+                  </span>
+                  <span className="absolute bottom-3 right-3 rounded-md bg-card/90 backdrop-blur-md px-2 py-0.5 font-mono text-[11px] font-semibold text-brand-navy shadow-sm">
+                    Stock: {product.stock ?? 0}
+                  </span>
+                </div>
+
+                {/* Content */}
+                <div className="p-4">
+                  <h3 className="font-semibold text-brand-navy text-sm line-clamp-1" title={product.name}>
+                    {product.name}
+                  </h3>
+                  <div className="mt-1 font-mono text-lg font-bold text-brand-blue">
+                    ₹{product.price.toLocaleString("en-IN")}
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-between border-t border-border px-4 py-3 bg-background/50">
+                <button
+                  onClick={() => openEditModal(product)}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-blue hover:underline"
+                >
+                  <Edit3 className="h-3.5 w-3.5" />
+                  Edit
+                </button>
+                <button
+                  onClick={() => setDeleteItem(product)}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-destructive/80 hover:text-destructive hover:underline"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add / Edit Product Modal */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-lg rounded-2xl border border-border bg-card shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-border px-6 py-4 bg-muted/20">
+              <h3 className="font-semibold text-brand-navy text-base">
+                {editingItem ? "Edit Product" : "Add New Product"}
+              </h3>
+              <button
+                onClick={() => setModalOpen(false)}
+                className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSave} className="p-6 space-y-4">
+              {/* Product Name */}
+              <div>
+                <label className="block text-xs font-semibold text-brand-navy mb-1.5">
+                  Product Name <span className="text-destructive">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Wireless Mechanical Keyboard"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  className="h-10 w-full rounded-xl border border-border bg-background px-3 font-normal text-sm text-brand-navy outline-none transition focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/15"
+                />
+              </div>
+
+              {/* Category Dropdown */}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-xs font-semibold text-brand-navy mb-1.5">
+                    Category <span className="text-destructive">*</span>
+                  </label>
+                  <select
+                    value={form.category}
+                    onChange={(e) => setForm({ ...form, category: e.target.value })}
+                    className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm text-brand-navy outline-none transition focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/15"
+                  >
+                    {categories.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                    <option value="__CUSTOM__">+ Add new category</option>
+                  </select>
+                </div>
+
+                {/* Price */}
+                <div>
+                  <label className="block text-xs font-semibold text-brand-navy mb-1.5">
+                    Price (₹) <span className="text-destructive">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    placeholder="e.g. 1499"
+                    value={form.price}
+                    onChange={(e) => setForm({ ...form, price: e.target.value })}
+                    className="h-10 w-full rounded-xl border border-border bg-background px-3 font-mono text-sm text-brand-navy outline-none transition focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/15"
+                  />
+                </div>
+              </div>
+
+              {/* Custom Category Input if selected */}
+              {form.category === "__CUSTOM__" && (
+                <div className="animate-in fade-in slide-in-from-top-1">
+                  <label className="block text-xs font-semibold text-brand-navy mb-1.5">
+                    New Category Name <span className="text-destructive">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Gaming & Accessories"
+                    value={form.customCategory}
+                    onChange={(e) => setForm({ ...form, customCategory: e.target.value })}
+                    className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm text-brand-navy outline-none transition focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/15"
+                  />
+                </div>
+              )}
+
+              {/* Stock Quantity */}
+              <div>
+                <label className="block text-xs font-semibold text-brand-navy mb-1.5">
+                  Stock Quantity
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="e.g. 50"
+                  value={form.stock}
+                  onChange={(e) => setForm({ ...form, stock: e.target.value })}
+                  className="h-10 w-full rounded-xl border border-border bg-background px-3 font-mono text-sm text-brand-navy outline-none transition focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/15"
+                />
+              </div>
+
+              {/* Image URL & Preview */}
+              <div>
+                <label className="block text-xs font-semibold text-brand-navy mb-1.5">
+                  Image URL <span className="text-xs font-normal text-muted-foreground">(optional — auto-generates if empty)</span>
+                </label>
+                <input
+                  type="url"
+                  placeholder="https://... (leave empty for default placeholder)"
+                  value={form.imageUrl}
+                  onChange={(e) => setForm({ ...form, imageUrl: e.target.value })}
+                  className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm text-brand-navy outline-none transition focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/15"
+                />
+                <div className="mt-2 flex items-center gap-3 rounded-lg border border-border/60 bg-muted/30 p-2 text-xs">
+                  <img
+                    src={
+                      form.imageUrl.trim() ||
+                      `https://picsum.photos/seed/${encodeURIComponent(form.name.trim() || "product")}/300/300`
+                    }
+                    alt="Preview"
+                    className="h-10 w-10 rounded-md object-cover border border-border shrink-0"
+                    onError={(e) => {
+                      (e.target as HTMLElement).style.display = "none";
+                    }}
+                  />
+                  <div className="text-[11px] text-muted-foreground truncate">
+                    Preview:{" "}
+                    {form.imageUrl.trim()
+                      ? "Custom URL provided"
+                      : "Automatic placeholder based on product name"}
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Buttons */}
+              <div className="flex items-center justify-end gap-3 border-t border-border pt-4 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setModalOpen(false)}
+                  className="rounded-xl border border-border px-4 py-2 text-xs font-semibold text-muted-foreground hover:bg-muted transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="inline-flex items-center gap-2 rounded-xl bg-brand-blue px-5 py-2 text-xs font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
+                >
+                  <Save className="h-3.5 w-3.5" />
+                  {saving ? "Saving..." : editingItem ? "Update product" : "Save product"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-md rounded-2xl border border-destructive/30 bg-card p-6 shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="flex items-start gap-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-destructive/10 text-destructive">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold text-brand-navy text-base">Delete product?</h3>
+                <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+                  Are you sure you want to remove <strong className="text-brand-navy font-semibold">{deleteItem.name}</strong> from your catalog? This will remove it from AI Buyer matching and in-policy recovery offers.
+                </p>
+
+                <div className="mt-4 flex items-center gap-3 rounded-lg border border-border bg-background p-2.5">
+                  <img
+                    src={deleteItem.imageUrl || `https://picsum.photos/seed/${deleteItem.id}/300/300`}
+                    alt={deleteItem.name}
+                    className="h-9 w-9 rounded-md object-cover border border-border shrink-0"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-semibold text-brand-navy truncate">{deleteItem.name}</div>
+                    <div className="text-[11px] font-mono text-muted-foreground">
+                      ₹{deleteItem.price.toLocaleString("en-IN")} • {deleteItem.category}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-6 flex items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    disabled={deleting}
+                    onClick={() => setDeleteItem(null)}
+                    className="rounded-xl border border-border px-4 py-2 text-xs font-semibold text-muted-foreground hover:bg-muted transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={deleting}
+                    onClick={handleDelete}
+                    className="inline-flex items-center gap-2 rounded-xl bg-destructive px-4 py-2 text-xs font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    {deleting ? "Deleting..." : "Delete product"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatSessionTime(isoString?: string) {
+  if (!isoString) return "";
+  try {
+    const d = new Date(isoString);
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    if (diffMins < 1) return "Just now";
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    return d.toLocaleDateString("en-IN", { month: "short", day: "numeric" });
+  } catch {
+    return "";
+  }
+}
+
+function formatOrderTime(isoString?: string) {
+  if (!isoString) return new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+  try {
+    const d = new Date(isoString);
+    return `${d.toLocaleDateString("en-IN", { month: "short", day: "numeric" })}, ${d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}`;
+  } catch {
+    return "";
+  }
+}
+
 function BuyerChat() {
   const { sendChatRequest, submitRequest } = useFirewall();
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(() => {
+    return sessionStorage.getItem("sentrypay-chat-session");
+  });
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
-  const [messages, setMessages] = useState<{ from: "user" | "agent"; text: string; result?: SubmitResult }[]>([
-    { from: "agent", text: "Hi! I’m your autonomous AI buyer powered by Groq and the SentryPay firewall. Tell me what product you’d like to purchase and I’ll extract your intent and submit it through policy verification." }
-  ]);
-  
-  // Real-time Firestore listener for escalated transactions
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Subscribe to real-time chat sessions from Firestore / backend
   useEffect(() => {
-    const escalatedMessages = messages.filter(m => m.result?.decision === 'escalated' && m.result?.transactionId);
+    const unsub = subscribeSessions("demo_merchant", (newSessions) => {
+      setSessions(newSessions);
+    });
+    return () => unsub();
+  }, []);
+
+  // Ensure an active session is loaded on mount (or create initial one if none exist)
+  useEffect(() => {
+    if (sessions.length > 0) {
+      if (!activeSessionId || !sessions.some((s) => s.id === activeSessionId)) {
+        const firstId = sessions[0].id;
+        setActiveSessionId(firstId);
+        sessionStorage.setItem("sentrypay-chat-session", firstId);
+      }
+    } else if (sessions.length === 0 && activeSessionId === null) {
+      // First time initialization: create initial session
+      const newSession = createNewSessionObject();
+      setActiveSessionId(newSession.id);
+      sessionStorage.setItem("sentrypay-chat-session", newSession.id);
+      persistSession("demo_merchant", newSession).then(() => {
+        setSessions([newSession]);
+      });
+    }
+  }, [sessions, activeSessionId]);
+
+  const activeSession = useMemo(() => {
+    return sessions.find((s) => s.id === activeSessionId) || (sessions.length > 0 ? sessions[0] : null);
+  }, [sessions, activeSessionId]);
+
+  const messages = activeSession?.messages || [];
+
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, loading]);
+
+  // Real-time Firestore listener for escalated transactions in the active session
+  useEffect(() => {
+    if (!activeSession) return;
+    const escalatedMessages = activeSession.messages.filter(
+      (m) => m.result?.decision === "escalated" && (m.transactionId || m.result?.transactionId)
+    );
     if (escalatedMessages.length === 0) return;
 
-    const unsubs = escalatedMessages.map(m => {
-      return onSnapshot(doc(db, "merchants/demo_merchant/transactions", m.result!.transactionId!), (snap) => {
+    const unsubs = escalatedMessages.map((m) => {
+      const txnId = m.transactionId || m.result!.transactionId!;
+      return onSnapshot(doc(db, "merchants/demo_merchant/transactions", txnId), (snap) => {
         if (snap.exists()) {
           const data = snap.data();
-          if (data.status === 'completed' || data.status === 'denied' || (data.decision && data.decision !== 'escalated')) {
-            setMessages(prev => prev.map(msg => 
-              msg.result?.transactionId === m.result?.transactionId
-                ? {
-                    ...msg,
-                    result: {
-                      ...msg.result!,
-                      decision: data.decision as Decision,
-                      reason: data.reason || (data.status === 'completed' ? 'Approved by merchant' : 'Denied by merchant'),
-                      status: data.status,
-                      orderId: data.orderId || data.razorpayOrderId,
-                    }
-                  }
-                : msg
-            ));
+          if (data.status === "completed" || data.status === "denied" || (data.decision && data.decision !== "escalated")) {
+            const updatedMessages: ChatMessage[] = activeSession.messages.map((msg) => {
+              const currentTxnId = msg.transactionId || msg.result?.transactionId;
+              if (currentTxnId === txnId) {
+                return {
+                  ...msg,
+                  result: {
+                    ...msg.result!,
+                    decision: data.decision as Decision,
+                    reason: data.reason || (data.status === "completed" ? "Approved by merchant" : "Denied by merchant"),
+                    status: data.status,
+                    orderId: data.orderId || data.razorpayOrderId,
+                  },
+                };
+              }
+              return msg;
+            });
+
+            const updatedSession: ChatSession = {
+              ...activeSession,
+              messages: updatedMessages,
+              updatedAt: new Date().toISOString(),
+            };
+
+            setSessions((prev) => prev.map((s) => (s.id === activeSession.id ? updatedSession : s)));
+            persistSession("demo_merchant", updatedSession);
           }
         }
       });
     });
 
-    return () => unsubs.forEach(u => u());
-  }, [messages]);
+    return () => unsubs.forEach((u) => u());
+  }, [activeSession]);
 
-  async function send(event: FormEvent) { 
-    event.preventDefault(); 
-    if (!text.trim() || loading) return; 
-    const request = text.trim(); 
-    
-    setMessages((m) => [...m, { from: "user", text: request }]); 
-    setText(""); 
+  function handleSelectSession(id: string) {
+    setActiveSessionId(id);
+    sessionStorage.setItem("sentrypay-chat-session", id);
+  }
+
+  async function handleNewChat() {
+    const newSession = createNewSessionObject();
+    setActiveSessionId(newSession.id);
+    sessionStorage.setItem("sentrypay-chat-session", newSession.id);
+    setSessions((prev) => [newSession, ...prev]);
+    await persistSession("demo_merchant", newSession);
+  }
+
+  async function handleDeleteSession(id: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    await removeSession("demo_merchant", id);
+    setSessions((prev) => {
+      const remaining = prev.filter((s) => s.id !== id);
+      if (activeSessionId === id) {
+        const nextId = remaining.length > 0 ? remaining[0].id : null;
+        setActiveSessionId(nextId);
+        if (nextId) sessionStorage.setItem("sentrypay-chat-session", nextId);
+        else sessionStorage.removeItem("sentrypay-chat-session");
+      }
+      return remaining;
+    });
+  }
+
+  async function send(event: FormEvent) {
+    event.preventDefault();
+    if (!text.trim() || loading) return;
+    const request = text.trim();
+
+    // Ensure we have a session
+    let targetSession = activeSession;
+    if (!targetSession) {
+      targetSession = createNewSessionObject();
+      setActiveSessionId(targetSession.id);
+      sessionStorage.setItem("sentrypay-chat-session", targetSession.id);
+    }
+
+    const now = new Date().toISOString();
+    const userMsg: ChatMessage = {
+      id: `msg_${Date.now()}_user`,
+      role: "user",
+      content: request,
+      timestamp: now,
+    };
+
+    const isFirstUserMsg = !targetSession.messages.some((m) => m.role === "user");
+    const updatedTitle = isFirstUserMsg ? request.slice(0, 36) : targetSession.title;
+
+    const sessionWithUser: ChatSession = {
+      ...targetSession,
+      title: updatedTitle,
+      updatedAt: now,
+      messages: [...targetSession.messages, userMsg],
+    };
+
+    setSessions((prev) => {
+      const exists = prev.some((s) => s.id === sessionWithUser.id);
+      return exists ? prev.map((s) => (s.id === sessionWithUser.id ? sessionWithUser : s)) : [sessionWithUser, ...prev];
+    });
+    setText("");
     setLoading(true);
-    
+
     try {
-      const result = await sendChatRequest(request); 
-      setMessages((m) => [...m, { from: "agent", text: `I evaluated "${request}" through the firewall policy engine.`, result }]); 
+      const result = await sendChatRequest(request);
+      const agentNow = new Date().toISOString();
+      let agentMsg: ChatMessage;
+
+      if (result.decision === "conversational") {
+        agentMsg = {
+          id: `msg_${Date.now()}_agent`,
+          role: "agent",
+          content: result.conversationalReply || result.reason || "How can I help you?",
+          timestamp: agentNow,
+        };
+      } else if (result.decision === "not_found") {
+        agentMsg = {
+          id: `msg_${Date.now()}_agent`,
+          role: "agent",
+          content: result.reason || "I couldn't find a matching product in the catalog.",
+          timestamp: agentNow,
+          result,
+        };
+      } else {
+        agentMsg = {
+          id: `msg_${Date.now()}_agent`,
+          role: "agent",
+          content: `I evaluated "${request}" through the firewall policy engine.`,
+          timestamp: agentNow,
+          transactionId: result.transactionId,
+          result,
+        };
+      }
+
+      const completedSession: ChatSession = {
+        ...sessionWithUser,
+        updatedAt: agentNow,
+        messages: [...sessionWithUser.messages, agentMsg],
+      };
+
+      setSessions((prev) => prev.map((s) => (s.id === completedSession.id ? completedSession : s)));
+      await persistSession("demo_merchant", completedSession);
     } finally {
       setLoading(false);
     }
   }
-  
-  async function acceptAlternative(result: SubmitResult) { 
-    if (!result.alternative) return; 
+
+  async function acceptAlternative(result: SubmitResult) {
+    if (!result.alternative || !activeSession) return;
     setLoading(true);
     try {
-      const next = await submitRequest(result.alternative); 
-      setMessages((m) => [
-        ...m, 
-        { from: "user", text: `Accept ${result.alternative!.name} for ₹${result.alternative!.price.toLocaleString("en-IN")}` }, 
-        { from: "agent", text: `Alternative request sent through the firewall.`, result: next }
-      ]); 
+      const next = await submitRequest(result.alternative);
+      const now = new Date().toISOString();
+      const userAcceptMsg: ChatMessage = {
+        id: `msg_${Date.now()}_user`,
+        role: "user",
+        content: `Accept ${result.alternative.name} for ₹${result.alternative.price.toLocaleString("en-IN")}`,
+        timestamp: now,
+      };
+      const agentOutcomeMsg: ChatMessage = {
+        id: `msg_${Date.now() + 1}_agent`,
+        role: "agent",
+        content: `Alternative request sent through the firewall.`,
+        timestamp: new Date().toISOString(),
+        transactionId: next.transactionId,
+        result: next,
+      };
+
+      const updatedSession: ChatSession = {
+        ...activeSession,
+        updatedAt: new Date().toISOString(),
+        messages: [...activeSession.messages, userAcceptMsg, agentOutcomeMsg],
+      };
+
+      setSessions((prev) => prev.map((s) => (s.id === updatedSession.id ? updatedSession : s)));
+      await persistSession("demo_merchant", updatedSession);
     } finally {
       setLoading(false);
     }
   }
 
-  function declineAlternative(result: SubmitResult) {
-    setMessages((m) => [
-      ...m,
-      { from: "user", text: `Decline alternative offer` },
-      { from: "agent", text: `Offer declined. Let me know if you would like to search for a different item.` }
-    ]);
+  function declineAlternative() {
+    if (!activeSession) return;
+    const now = new Date().toISOString();
+    const userDeclineMsg: ChatMessage = {
+      id: `msg_${Date.now()}_user`,
+      role: "user",
+      content: `Decline alternative offer`,
+      timestamp: now,
+    };
+    const agentReplyMsg: ChatMessage = {
+      id: `msg_${Date.now() + 1}_agent`,
+      role: "agent",
+      content: `Offer declined. Let me know if you would like to search for a different item.`,
+      timestamp: new Date().toISOString(),
+    };
+
+    const updatedSession: ChatSession = {
+      ...activeSession,
+      updatedAt: new Date().toISOString(),
+      messages: [...activeSession.messages, userDeclineMsg, agentReplyMsg],
+    };
+
+    setSessions((prev) => prev.map((s) => (s.id === updatedSession.id ? updatedSession : s)));
+    persistSession("demo_merchant", updatedSession);
   }
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <div className="mb-7">
-        <p className="text-sm text-muted-foreground">Simulate an autonomous purchase with natural language</p>
-        <h2 className="mt-1 text-2xl font-bold tracking-tight text-brand-navy">AI Buyer</h2>
-      </div>
-      <div className="overflow-hidden rounded-2xl border border-brand-blue/20 bg-card">
-        <div className="flex items-center gap-3 border-b border-border px-5 py-4">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-blue/10 text-brand-blue"><Bot className="h-5 w-5" /></div>
-          <div>
-            <div className="text-sm font-semibold text-brand-navy">SentryPay shopping agent</div>
-            <div className="flex items-center gap-1 text-[11px] text-success"><span className="h-1.5 w-1.5 rounded-full bg-success" />Connected to Groq LLM & merchant catalog</div>
-          </div>
-          <span className="ml-auto rounded-md bg-muted px-2 py-1 font-mono text-[10px] text-muted-foreground">{AGENT_ID}</span>
+    <div className="mx-auto max-w-6xl space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm text-muted-foreground">Simulate an autonomous purchase with natural language</p>
+          <h2 className="mt-1 text-2xl font-bold tracking-tight text-brand-navy">AI Buyer</h2>
         </div>
-        
-        <div className="min-h-[420px] max-h-[600px] overflow-y-auto space-y-5 bg-background/50 p-5 sm:p-7">
-          {messages.map((message, i) => (
-            <div key={i} className={cn("flex gap-3", message.from === "user" && "justify-end")}>
-              <div className={cn("max-w-[90%] rounded-2xl px-4 py-3 text-sm", message.from === "user" ? "rounded-br-md bg-brand-blue text-white" : "rounded-bl-md border border-border bg-card text-brand-navy")}>
-                <p>{message.text}</p>
-                {message.result && (
-                  <DecisionCard 
-                    result={message.result} 
-                    onAccept={() => acceptAlternative(message.result!)} 
-                    onDecline={() => declineAlternative(message.result!)}
-                  />
-                )}
-              </div>
-            </div>
-          ))}
-          {loading && (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground italic">
-              <RefreshCw className="h-3 w-3 animate-spin text-brand-blue" />
-              AI Agent is parsing catalog and evaluating firewall rules...
-            </div>
+      </div>
+
+      <div className="flex h-[720px] overflow-hidden rounded-2xl border border-brand-blue/20 bg-card shadow-sm">
+        {/* Chat Sessions Left Sidebar */}
+        <div
+          className={cn(
+            "flex flex-col border-r border-border bg-muted/20 transition-all duration-300 ease-in-out shrink-0",
+            sidebarOpen ? "w-72 sm:w-80" : "w-0 overflow-hidden border-none"
           )}
+        >
+          <div className="flex items-center justify-between border-b border-border p-3.5">
+            <div className="flex items-center gap-2 text-xs font-semibold text-brand-navy">
+              <MessageSquare className="h-4 w-4 text-brand-blue" />
+              <span>Chat History</span>
+              <span className="rounded-full bg-brand-blue/10 px-2 py-0.5 font-mono text-[10px] text-brand-blue">
+                {sessions.length}
+              </span>
+            </div>
+            <button
+              onClick={handleNewChat}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-brand-blue/10 px-2.5 py-1.5 text-xs font-semibold text-brand-blue transition hover:bg-brand-blue hover:text-white"
+              title="Start a new chat session"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>New chat</span>
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5">
+            {sessions.length === 0 ? (
+              <div className="p-4 text-center text-xs text-muted-foreground">
+                No past sessions yet. Start a new chat!
+              </div>
+            ) : (
+              sessions.map((s) => {
+                const isActive = s.id === activeSessionId;
+                const lastMsg = s.messages[s.messages.length - 1];
+                return (
+                  <div
+                    key={s.id}
+                    onClick={() => handleSelectSession(s.id)}
+                    className={cn(
+                      "group relative flex cursor-pointer flex-col rounded-xl p-3 text-left transition",
+                      isActive
+                        ? "bg-brand-blue/10 border border-brand-blue/40 shadow-xs"
+                        : "hover:bg-muted/60 border border-transparent"
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className={cn("truncate text-xs font-semibold", isActive ? "text-brand-navy" : "text-foreground")}>
+                        {s.title || "New chat"}
+                      </div>
+                      <span className="shrink-0 text-[10px] text-muted-foreground">
+                        {formatSessionTime(s.updatedAt || s.createdAt)}
+                      </span>
+                    </div>
+                    {lastMsg && (
+                      <p className="mt-1 line-clamp-1 text-[11px] text-muted-foreground">
+                        {lastMsg.content}
+                      </p>
+                    )}
+                    <button
+                      onClick={(e) => handleDeleteSession(s.id, e)}
+                      title="Delete session"
+                      className="absolute right-2.5 bottom-2.5 opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-destructive transition rounded-md hover:bg-background/80"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
 
-        <form onSubmit={send} className="flex gap-2 border-t border-border bg-card p-4">
-          <input 
-            value={text} 
-            onChange={(e) => setText(e.target.value)} 
-            placeholder="Try: 'Buy wireless earbuds under 2000' or 'Buy running shoes for 8000'" 
-            className="h-11 min-w-0 flex-1 rounded-xl border border-border bg-background px-4 text-sm outline-none focus:border-brand-blue" 
-          />
-          <button type="submit" disabled={loading} className="flex h-11 shrink-0 items-center gap-2 rounded-xl bg-brand-blue px-4 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50">
-            <span className="hidden sm:inline">Send request</span>
-            <ArrowUpRight className="h-4 w-4" />
-          </button>
-        </form>
+        {/* Main Chat Conversation Area */}
+        <div className="flex flex-1 flex-col min-w-0 bg-card">
+          {/* Header */}
+          <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
+            <div className="flex items-center gap-3 min-w-0">
+              <button
+                onClick={() => setSidebarOpen((open) => !open)}
+                className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-brand-navy transition"
+                title={sidebarOpen ? "Hide chat sessions" : "Show chat sessions"}
+              >
+                {sidebarOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
+              </button>
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-blue/10 text-brand-blue">
+                <Bot className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <div className="truncate text-xs font-semibold text-brand-navy">
+                  {activeSession?.title || "SentryPay shopping agent"}
+                </div>
+                <div className="flex items-center gap-1 text-[10px] text-success">
+                  <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
+                  <span>Connected to Groq LLM & merchant catalog</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={handleNewChat}
+                className="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-brand-navy hover:bg-muted transition"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>New chat</span>
+              </button>
+              <span className="rounded-md bg-muted px-2 py-1 font-mono text-[10px] text-muted-foreground">
+                {AGENT_ID}
+              </span>
+            </div>
+          </div>
+
+          {/* Messages Feed */}
+          <div className="flex-1 overflow-y-auto space-y-4 bg-background/50 p-5 sm:p-6">
+            {messages.map((message) => {
+              const isUser = message.role === "user";
+              return (
+                <div key={message.id} className={cn("flex gap-3", isUser && "justify-end")}>
+                  <div
+                    className={cn(
+                      "max-w-[88%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-2xs",
+                      isUser
+                        ? "rounded-br-md bg-brand-blue text-white"
+                        : "rounded-bl-md border border-border bg-card text-brand-navy"
+                    )}
+                  >
+                    <p>{message.content}</p>
+                    {message.result && (
+                      <DecisionCard
+                        result={message.result}
+                        onAccept={() => acceptAlternative(message.result!)}
+                        onDecline={declineAlternative}
+                        onSelectSuggestion={(query) => setText(query)}
+                      />
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            {loading && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground italic">
+                <RefreshCw className="h-3.5 w-3.5 animate-spin text-brand-blue" />
+                AI Agent is parsing catalog and evaluating firewall rules...
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Prompt input */}
+          <form onSubmit={send} className="flex gap-2 border-t border-border bg-card p-4">
+            <input
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="Try: 'Buy wireless earbuds under 2000' or 'Buy running shoes for 8000'"
+              className="h-11 min-w-0 flex-1 rounded-xl border border-border bg-background px-4 text-sm outline-none focus:border-brand-blue"
+            />
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex h-11 shrink-0 items-center gap-2 rounded-xl bg-brand-blue px-4 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
+            >
+              <span className="hidden sm:inline">Send request</span>
+              <ArrowUpRight className="h-4 w-4" />
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   );
@@ -508,12 +1588,68 @@ function BuyerChat() {
 function DecisionCard({ 
   result, 
   onAccept, 
-  onDecline 
+  onDecline,
+  onSelectSuggestion
 }: { 
   result: SubmitResult; 
   onAccept: () => void; 
   onDecline: () => void; 
+  onSelectSuggestion?: (query: string) => void;
 }) { 
+  if (result.decision === "conversational") {
+    return null;
+  }
+
+  // Outcome: Not Found (Neutral styling, NOT policy blocked)
+  if (result.decision === "not_found") {
+    return (
+      <div className="mt-3 rounded-xl border border-border bg-card p-3.5 shadow-sm text-foreground">
+        <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+          <HelpCircle className="h-4 w-4 text-muted-foreground" />
+          <span>Product Not Found</span>
+          <span className="ml-auto font-mono text-[10px] uppercase tracking-wider rounded bg-muted px-2 py-0.5 text-muted-foreground">
+            NOT IN CATALOG
+          </span>
+        </div>
+        
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+          {result.reason || "I couldn't find a matching product — try one of our catalog items below:"}
+        </p>
+
+        {result.suggestions && result.suggestions.length > 0 && (
+          <div className="mt-3 space-y-2">
+            <div className="text-[11px] font-semibold text-brand-navy">Available in catalog:</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {result.suggestions.map((item) => (
+                <div 
+                  key={item.id}
+                  onClick={() => onSelectSuggestion && onSelectSuggestion(`Buy ${item.name}`)}
+                  className="flex items-center gap-2.5 rounded-lg border border-border bg-background p-2 text-left transition hover:border-brand-blue/50 hover:bg-brand-blue/5 cursor-pointer group"
+                >
+                  <img 
+                    src={item.imageUrl || `https://picsum.photos/seed/${item.id}/300/300`} 
+                    alt={item.name}
+                    className="h-10 w-10 rounded-md object-cover border border-border shrink-0"
+                    onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-medium text-brand-navy truncate group-hover:text-brand-blue">
+                      {item.name}
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                      <span className="truncate">{item.category}</span>
+                      <span className="font-mono font-semibold text-brand-navy">₹{item.price.toLocaleString("en-IN")}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   const config = ({ 
     approved: ["Approved", "text-success", "bg-success/10 border-success/30", CheckCircle2], 
     recovered: ["Recovery offer", "text-brand-blue", "bg-brand-blue/10 border-brand-blue/30", RefreshCw], 
@@ -536,37 +1672,118 @@ function DecisionCard({
 
       {/* Outcome 1: Approved confirmation card */}
       {result.decision === "approved" && (
-        <div className="mt-3 rounded-lg border border-success/20 bg-card p-3">
-          <div className="flex items-center justify-between">
-            <div className="text-xs font-semibold text-brand-navy">Order Placed & Confirmed</div>
-            <span className="rounded bg-success/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-success">
-              {result.status === "completed" ? "PAID" : result.status?.toUpperCase() || "CONFIRMED"}
-            </span>
+        <div className="mt-3 overflow-hidden rounded-xl border border-success/30 bg-card shadow-xs">
+          {/* Top Bar: Autonomous Payment Status + Razorpay Badge */}
+          <div className="flex items-center justify-between border-b border-border/60 bg-success/[0.04] px-3.5 py-2.5">
+            <div className="flex items-center gap-2">
+              <span className="flex h-2 w-2 rounded-full bg-success animate-pulse" />
+              <span className="text-xs font-bold tracking-tight text-brand-navy">
+                Approved & Paid
+              </span>
+            </div>
+            
+            {/* Razorpay badge */}
+            <div className="flex items-center gap-1.5 rounded-full bg-[#0c2340] px-2.5 py-1 text-[10px] font-semibold text-white shadow-xs">
+              <svg className="h-3 w-3 fill-[#0d94fb]" viewBox="0 0 24 24">
+                <path d="M14.078 0L3 13.523h7.625L7.922 24 21 8.477h-7.625z" />
+              </svg>
+              <span className="tracking-wide">Razorpay</span>
+              <span className="rounded bg-[#0d94fb]/20 px-1 text-[9px] font-mono text-[#0d94fb]">TEST</span>
+            </div>
           </div>
-          {orderId ? (
-            <div className="mt-2 flex items-center gap-2 font-mono text-[11px] text-brand-navy">
-              <Check className="h-3.5 w-3.5 text-success shrink-0" />
-              <span>Razorpay Order ID: <strong className="text-brand-blue">{orderId}</strong></span>
+
+          <div className="p-3.5 space-y-3">
+            {/* Order Summary */}
+            {result.parsedProduct && (
+              <div className="flex items-center gap-3 rounded-lg border border-border/70 bg-background/60 p-2.5">
+                <img 
+                  src={result.parsedProduct.imageUrl || `https://picsum.photos/seed/${result.parsedProduct.id}/300/300`}
+                  alt={result.parsedProduct.name}
+                  className="h-12 w-12 rounded-lg object-cover border border-border/80 shrink-0 shadow-2xs"
+                  onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <h4 className="text-xs font-semibold text-brand-navy truncate">
+                      {result.parsedProduct.name}
+                    </h4>
+                    <span className="shrink-0 font-mono text-xs font-bold text-brand-blue">
+                      ₹{(result.entry?.amount || result.parsedProduct.price).toLocaleString("en-IN")}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
+                    <span className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      {result.parsedProduct.category}
+                    </span>
+                    <span className="font-mono text-[10px] text-muted-foreground">
+                      {formatOrderTime(result.time || result.entry?.time)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Price Note (if user stated budget differed from catalog price) */}
+            {result.priceNote && (
+              <div className="rounded-md bg-brand-blue/5 border border-brand-blue/15 px-2.5 py-1.5 text-[11px] text-brand-navy flex items-start gap-1.5">
+                <span className="text-brand-blue font-bold shrink-0">ℹ</span>
+                <span className="leading-tight text-muted-foreground">{result.priceNote}</span>
+              </div>
+            )}
+
+            {/* Razorpay Order ID & Status */}
+            {orderId ? (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-lg border border-border/80 bg-muted/30 px-3 py-2">
+                <div className="flex items-center gap-2 font-mono text-xs text-brand-navy">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0" />
+                  <span className="text-muted-foreground">Order ID:</span>
+                  <span className="font-bold text-brand-navy select-all">{orderId}</span>
+                </div>
+                <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                  <span className="inline-flex items-center rounded-md bg-success/15 px-2 py-0.5 font-mono text-[10px] font-bold text-success">
+                    PAID • 200 OK
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="text-[11px] text-muted-foreground font-mono">
+                Status: {result.status || "completed"} {result.errorReason ? `(${result.errorReason})` : ""}
+              </div>
+            )}
+
+            {/* Micro-footer note explaining autonomous payment */}
+            <div className="flex items-center justify-between pt-1 text-[10px] text-muted-foreground border-t border-border/40">
+              <span className="flex items-center gap-1">
+                <ShieldCheck className="h-3 w-3 text-brand-blue" />
+                Autonomous payment executed via Razorpay Orders API
+              </span>
+              <span className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground/70">
+                NO HUMAN CHECKOUT
+              </span>
             </div>
-          ) : (
-            <div className="mt-1.5 text-[10px] text-muted-foreground font-mono">
-              Status: {result.status} {result.errorReason ? `(${result.errorReason})` : ""}
-            </div>
-          )}
+          </div>
         </div>
       )}
 
       {/* Outcome 2: Recovery offer card with Accept and Decline */}
       {result.decision === "recovered" && result.alternative && (
         <div className="mt-3 rounded-lg border border-brand-blue/20 bg-card p-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-xs font-semibold text-brand-navy">{result.alternative.name}</div>
-              <div className="mt-0.5 font-mono text-xs font-bold text-brand-blue">
-                ₹{result.alternative.price.toLocaleString("en-IN")}
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <img 
+                src={result.alternative.imageUrl || `https://picsum.photos/seed/${result.alternative.id}/300/300`}
+                alt={result.alternative.name}
+                className="h-11 w-11 rounded-md object-cover border border-border shrink-0"
+                onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+              />
+              <div className="min-w-0">
+                <div className="text-xs font-semibold text-brand-navy truncate">{result.alternative.name}</div>
+                <div className="mt-0.5 font-mono text-xs font-bold text-brand-blue">
+                  ₹{result.alternative.price.toLocaleString("en-IN")}
+                </div>
               </div>
             </div>
-            <span className="rounded bg-brand-blue/10 px-2 py-0.5 text-[10px] font-medium text-brand-blue">
+            <span className="rounded bg-brand-blue/10 px-2 py-0.5 text-[10px] font-medium text-brand-blue shrink-0">
               In-policy alternative
             </span>
           </div>
@@ -589,15 +1806,33 @@ function DecisionCard({
 
       {/* Outcome 3: Escalated pending-approval card with live status */}
       {result.decision === "escalated" && (
-        <div className="mt-3 flex items-center justify-between rounded-lg border border-warning/20 bg-card p-2.5">
-          <div className="flex items-center gap-2">
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-warning opacity-75"></span>
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-warning"></span>
-            </span>
-            <span className="text-xs font-medium text-brand-navy">Awaiting merchant review in Approval Queue</span>
+        <div className="mt-3 space-y-2">
+          {result.parsedProduct && (
+            <div className="flex items-center gap-2.5 rounded-md border border-warning/20 bg-background/50 p-2">
+              <img 
+                src={result.parsedProduct.imageUrl || `https://picsum.photos/seed/${result.parsedProduct.id}/300/300`}
+                alt={result.parsedProduct.name}
+                className="h-10 w-10 rounded-md object-cover border border-border shrink-0"
+                onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+              />
+              <div className="min-w-0 flex-1">
+                <div className="text-xs font-medium text-brand-navy truncate">{result.parsedProduct.name}</div>
+                <div className="text-[11px] font-mono text-muted-foreground">
+                  ₹{(result.entry?.amount || result.parsedProduct.price).toLocaleString("en-IN")} • {result.parsedProduct.category}
+                </div>
+              </div>
+            </div>
+          )}
+          <div className="flex items-center justify-between rounded-lg border border-warning/20 bg-card p-2.5">
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-warning opacity-75"></span>
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-warning"></span>
+              </span>
+              <span className="text-xs font-medium text-brand-navy">Awaiting merchant review in Approval Queue</span>
+            </div>
+            <span className="font-mono text-[10px] text-muted-foreground">{result.transactionId?.slice(0, 8)}</span>
           </div>
-          <span className="font-mono text-[10px] text-muted-foreground">{result.transactionId?.slice(0, 8)}</span>
         </div>
       )}
 
@@ -789,29 +2024,30 @@ function AuditPanel() {
 }
 
 function AuditRow({ entry, detailed = false }: { entry: any; detailed?: boolean }) {
-  const config = ({
+  const config = {
     approved: ["Approved", "text-success", "bg-success/10", CheckCircle2, "border-success"],
     blocked: ["Blocked", "text-destructive", "bg-destructive/10", Ban, "border-destructive"],
     escalated: ["Escalated", "text-warning", "bg-warning/10", Clock3, "border-warning"],
     recovered: ["Recovered", "text-brand-blue", "bg-brand-blue/10", RefreshCw, "border-brand-blue"],
-  } as const)[entry.decision as Decision] || ["Unknown", "text-muted-foreground", "bg-muted", Activity, "border-muted"];
+  };
+  const itemConfig = (config as Record<string, any>)[entry.decision] || ["Unknown", "text-muted-foreground", "bg-muted", Activity, "border-muted"];
   
-  const Icon = config[3];
+  const Icon = itemConfig[3];
   
   return (
     <motion.div
       initial={{ opacity: 0, y: -10 }}
       animate={{ opacity: 1, y: 0 }}
-      className={cn("flex items-start gap-3 px-6 py-4 border-l-4", config[4])}
+      className={cn("flex items-start gap-3 px-6 py-4 border-l-4", itemConfig[4])}
     >
-      <div className={cn("mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", config[2])}>
-        <Icon className={cn("h-4 w-4", config[1])} />
+      <div className={cn("mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", itemConfig[2])}>
+        <Icon className={cn("h-4 w-4", itemConfig[1])} />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="text-sm font-semibold text-brand-navy">{entry.product}</span>
-          <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", config[2], config[1])}>
-            {config[0]}
+          <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", itemConfig[2], itemConfig[1])}>
+            {itemConfig[0]}
           </span>
           <span className="ml-auto font-mono text-[10px] text-muted-foreground">
             {new Date(entry.time).toLocaleTimeString("en-IN")}
