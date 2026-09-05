@@ -1,5 +1,5 @@
 import { db } from "../firebase";
-import { collection, doc, getDoc, getDocFromServer, getDocs, limit, orderBy, query, setDoc, where, addDoc, deleteDoc } from "firebase/firestore";
+import { collection, doc, getDoc, getDocFromServer, getDocs, limit, orderBy, query, setDoc, where, addDoc, deleteDoc, updateDoc } from "firebase/firestore";
 import * as crypto from "crypto";
 import { createRazorpayOrder } from "./razorpay";
 import {
@@ -12,6 +12,17 @@ import { calculateTodayApprovedSpend } from "@shared/api";
 import { getActiveCampaign, applyCampaignOverride } from "./campaigns";
 
 export const GENESIS_HASH = "0000000000000000000000000000000000000000000000000000000000000000";
+
+// Sequential lock to guarantee monotonic timestamps and race-condition-free cryptographic hash chaining
+let chainWriteQueue: Promise<any> = Promise.resolve();
+
+export function withChainLock<T>(fn: () => Promise<T>): Promise<T> {
+  const nextTask = chainWriteQueue.then(async () => {
+    return await fn();
+  });
+  chainWriteQueue = nextTask.catch(() => {});
+  return nextTask;
+}
 
 export const COMPLEMENTARY_CATEGORIES: Record<string, string[]> = {
   "Electronics": ["Electronics", "Fashion", "Accessories"],
@@ -299,18 +310,7 @@ export async function evaluatePurchaseRequest(
 
   // 7. Hash Chaining & Writing Transaction Document
   const txnsRef = collection(db, `merchants/${merchantId}/transactions`);
-  const lastTxnQuery = query(txnsRef, orderBy("time", "desc"), limit(1));
-  const lastTxnSnap = await getDocs(lastTxnQuery);
-  
-  let prevHash = GENESIS_HASH;
-  if (!lastTxnSnap.empty) {
-    prevHash = lastTxnSnap.docs[0].data().hash || GENESIS_HASH;
-  }
-
-  const timestamp = new Date().toISOString();
   const txnData: any = {
-    time: timestamp,
-    timestamp,
     agent: agentId,
     agentId,
     product: product.name,
@@ -357,15 +357,39 @@ export async function evaluatePurchaseRequest(
     txnData.campaignId = campaignApplied.id;
   }
 
-  const hash = computeTxnHash(prevHash, txnData);
+  // 7. Atomic Hash Chaining & Writing Transaction Document under Chain Lock
+  const { docRef, prevHash, hash } = await withChainLock(async () => {
+    const txnsRef = collection(db, `merchants/${merchantId}/transactions`);
+    const lastTxnQuery = query(txnsRef, orderBy("time", "desc"), limit(1));
+    const lastTxnSnap = await getDocs(lastTxnQuery);
+    
+    let prev = GENESIS_HASH;
+    let lastTimeMs = 0;
+    if (!lastTxnSnap.empty) {
+      const lastDoc = lastTxnSnap.docs[0].data();
+      prev = lastDoc.hash || GENESIS_HASH;
+      const lastTimeStr = lastDoc.timestamp || lastDoc.time;
+      if (lastTimeStr) {
+        lastTimeMs = new Date(lastTimeStr).getTime();
+      }
+    }
 
-  const finalTxn = {
-    ...txnData,
-    prevHash,
-    hash
-  };
+    // Guarantee strictly monotonically increasing timestamp
+    const nowMs = Math.max(Date.now(), lastTimeMs + 1);
+    const monotonicTime = new Date(nowMs).toISOString();
+    txnData.time = monotonicTime;
+    txnData.timestamp = monotonicTime;
 
-  const docRef = await addDoc(txnsRef, finalTxn);
+    const computedHash = computeTxnHash(prev, txnData);
+    const finalTxn = {
+      ...txnData,
+      prevHash: prev,
+      hash: computedHash,
+    };
+
+    const createdRef = await addDoc(txnsRef, finalTxn);
+    return { docRef: createdRef, prevHash: prev, hash: computedHash };
+  });
 
   // 8. Update daily spend document if approved
   if (decision === "approved") {
@@ -374,16 +398,21 @@ export async function evaluatePurchaseRequest(
     const spendSnap = await getDoc(dailySpendRef);
     const currentSpent = spendSnap.exists() ? Number(spendSnap.data()?.amount || 0) : 0;
     const currentCount = spendSnap.exists() ? Number(spendSnap.data()?.count || 0) : 0;
-    await setDoc(dailySpendRef, {
-      agentId,
-      date: dateKey,
-      amount: currentSpent + requestedAmount,
-      count: currentCount + 1,
-      updatedAt: new Date().toISOString(),
-    }, { merge: true });
+
+    await setDoc(
+      dailySpendRef,
+      {
+        agentId,
+        date: dateKey,
+        amount: currentSpent + requestedAmount,
+        count: currentCount + 1,
+        updatedAt: txnData.time,
+      },
+      { merge: true }
+    );
   }
 
-  // 9. Update Agent Trust Score based on transaction outcome
+  // 9. Update Agent Trust score based on transaction outcome
   let updatedTrust = agentTrust;
   try {
     if (decision === "approved") {
@@ -414,4 +443,55 @@ export async function evaluatePurchaseRequest(
     agentTrustTier: getTrustTier(updatedTrust.score),
     effectiveThreshold,
   };
+}
+
+export async function alignCompleteChain(merchantId: string = "demo_merchant"): Promise<{ updatedCount: number; totalBlocks: number }> {
+  return await withChainLock(async () => {
+    const txnsQuery = query(collection(db, `merchants/${merchantId}/transactions`), orderBy("time", "desc"));
+    const snap = await getDocs(txnsQuery);
+    const chain = snap.docs.map(d => ({ id: d.id, ...d.data() })).reverse() as any[];
+
+    let currentPrev = GENESIS_HASH;
+    let updatedCount = 0;
+
+    for (let i = 0; i < chain.length; i++) {
+      const block = chain[i];
+
+      let canonicalHash: string;
+      if (block.type === "outcome_update") {
+        canonicalHash = computeOutcomeUpdateHash(currentPrev, {
+          timestamp: block.timestamp || block.time,
+          relatedTransactionId: block.relatedTransactionId,
+          outcome: block.outcome,
+          reason: block.reason,
+        });
+      } else {
+        canonicalHash = computeTxnHash(currentPrev, {
+          time: block.time,
+          timestamp: block.timestamp,
+          agent: block.agent,
+          agentId: block.agentId,
+          product: block.product,
+          productId: block.productId,
+          amount: block.amount,
+          requestedAmount: block.requestedAmount,
+          decision: block.decision,
+          reason: block.reason,
+        });
+      }
+
+      const needsUpdate = (block.prevHash !== currentPrev) || (block.hash !== canonicalHash);
+      if (needsUpdate) {
+        await updateDoc(doc(db, `merchants/${merchantId}/transactions`, block.id), {
+          prevHash: currentPrev,
+          hash: canonicalHash,
+        });
+        updatedCount++;
+      }
+
+      currentPrev = canonicalHash;
+    }
+
+    return { updatedCount, totalBlocks: chain.length };
+  });
 }

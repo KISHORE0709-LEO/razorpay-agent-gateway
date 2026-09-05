@@ -14,7 +14,7 @@ import {
 } from "firebase/firestore";
 import { createRazorpayOrder } from "../services/razorpay";
 import { updateAgentTrustOnTransaction } from "../services/agentTrust";
-import { GENESIS_HASH, computeOutcomeUpdateHash, getMerchantTodayApprovedSpend } from "../services/firewall";
+import { GENESIS_HASH, computeOutcomeUpdateHash, getMerchantTodayApprovedSpend, withChainLock } from "../services/firewall";
 
 export const handleResolve: RequestHandler = async (req, res): Promise<any> => {
   try {
@@ -48,15 +48,6 @@ export const handleResolve: RequestHandler = async (req, res): Promise<any> => {
       return res.status(400).json({ error: "Transaction has already been resolved" });
     }
 
-    // Get the most recent transaction document in the chain to obtain prevHash
-    const lastTxnQuery = query(txnsRef, orderBy("time", "desc"), limit(1));
-    const lastTxnSnap = await getDocs(lastTxnQuery);
-    let prevHash = GENESIS_HASH;
-    if (!lastTxnSnap.empty) {
-      prevHash = lastTxnSnap.docs[0].data().hash || GENESIS_HASH;
-    }
-
-    const timestamp = new Date().toISOString();
     let order: any = null;
 
     if (approve) {
@@ -99,7 +90,7 @@ export const handleResolve: RequestHandler = async (req, res): Promise<any> => {
             date: dateKey,
             amount: currentSpent + orderAmount,
             count: currentCount + 1,
-            updatedAt: timestamp,
+            updatedAt: new Date().toISOString(),
           },
           { merge: true }
         );
@@ -134,9 +125,6 @@ export const handleResolve: RequestHandler = async (req, res): Promise<any> => {
       relatedTransactionId: transactionId,
       outcome,
       reason,
-      timestamp,
-      time: timestamp, // for ordering alongside standard transactions
-      prevHash,
       agent: txData.agent || txData.agentId || "agt_live_7f3c9e",
       agentId: txData.agent || txData.agentId || "agt_live_7f3c9e",
       product: txData.product || txData.productId || "Item",
@@ -148,19 +136,40 @@ export const handleResolve: RequestHandler = async (req, res): Promise<any> => {
       outcomeUpdateData.razorpayOrderId = order.id;
     }
 
-    // Compute hash strictly using immutable fields
-    const hash = computeOutcomeUpdateHash(prevHash, {
-      timestamp,
-      relatedTransactionId: transactionId,
-      outcome,
-      reason,
+    const { docRef, hash } = await withChainLock(async () => {
+      const lastTxnQuery = query(txnsRef, orderBy("time", "desc"), limit(1));
+      const lastTxnSnap = await getDocs(lastTxnQuery);
+      let prev = GENESIS_HASH;
+      let lastTimeMs = 0;
+      if (!lastTxnSnap.empty) {
+        const lastDoc = lastTxnSnap.docs[0].data();
+        prev = lastDoc.hash || GENESIS_HASH;
+        const lastTimeStr = lastDoc.timestamp || lastDoc.time;
+        if (lastTimeStr) {
+          lastTimeMs = new Date(lastTimeStr).getTime();
+        }
+      }
+
+      const nowMs = Math.max(Date.now(), lastTimeMs + 1);
+      const monotonicTimestamp = new Date(nowMs).toISOString();
+      outcomeUpdateData.timestamp = monotonicTimestamp;
+      outcomeUpdateData.time = monotonicTimestamp;
+      outcomeUpdateData.prevHash = prev;
+
+      // Compute hash strictly using immutable fields
+      const computedHash = computeOutcomeUpdateHash(prev, {
+        timestamp: monotonicTimestamp,
+        relatedTransactionId: transactionId,
+        outcome,
+        reason,
+      });
+      outcomeUpdateData.hash = computedHash;
+
+      // Create NEW document in transactions collection.
+      // The original escalated document (txRef) is NEVER mutated!
+      const createdRef = await addDoc(txnsRef, outcomeUpdateData);
+      return { docRef: createdRef, hash: computedHash };
     });
-
-    outcomeUpdateData.hash = hash;
-
-    // Create NEW document in transactions collection.
-    // The original escalated document (txRef) is NEVER mutated!
-    const docRef = await addDoc(txnsRef, outcomeUpdateData);
 
     return res.json({
       success: true,

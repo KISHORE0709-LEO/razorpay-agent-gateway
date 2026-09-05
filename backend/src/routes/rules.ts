@@ -102,3 +102,19 @@ export const handleResetAgentTrust = async (req: Request, res: Response): Promis
   }
 };
 
+export const handleAlignChain = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const merchantId = (req.body?.merchantId as string) || (req.query?.merchantId as string) || "demo_merchant";
+    const { alignCompleteChain } = await import("../services/firewall");
+    const result = await alignCompleteChain(merchantId);
+    res.json({
+      success: true,
+      message: `Chain aligned successfully. Verified ${result.totalBlocks} blocks, updated ${result.updatedCount}.`,
+      ...result,
+    });
+  } catch (error: any) {
+    console.error("Error aligning chain:", error);
+    res.status(500).json({ error: error.message || "Failed to align chain" });
+  }
+};
+

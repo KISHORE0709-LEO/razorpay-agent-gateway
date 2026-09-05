@@ -3422,9 +3422,10 @@ function AuditPanel({
   initialFilter?: string;
   onFilterChange?: (filter: string) => void;
 } = {}) {
-  const { auditLog } = useFirewall();
+  const { auditLog, alignChain } = useFirewall();
   const [filter, setFilter] = useState<string>(initialFilter);
   const [verifying, setVerifying] = useState(false);
+  const [repairing, setRepairing] = useState(false);
   const [verificationResult, setVerificationResult] = useState<{
     checked: boolean;
     valid: boolean;
@@ -3525,6 +3526,25 @@ function AuditPanel({
     });
   };
 
+  const handleRepairChain = async () => {
+    setRepairing(true);
+    try {
+      const res = await alignChain();
+      if (res.success) {
+        // Wait briefly for Firestore real-time listener to sync
+        await new Promise((r) => setTimeout(r, 800));
+        await verifyChain();
+      } else {
+        alert("Failed to re-align chain. Please try again.");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Error repairing chain.");
+    } finally {
+      setRepairing(false);
+    }
+  };
+
   return (
     <div className="space-y-7">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -3542,28 +3562,51 @@ function AuditPanel({
               Every event is cryptographically linked to the previous SHA-256 block using immutable creation fields
             </p>
           </div>
-          {verificationResult.checked ? (
-            verificationResult.valid ? (
-              <span className="flex items-center gap-1.5 rounded-full bg-success/15 px-3 py-1.5 text-xs font-semibold text-success">
-                <ShieldCheck className="h-4 w-4" />
-                Chain verified ({verificationResult.count} blocks intact)
-              </span>
+          <div className="flex items-center gap-2">
+            {verificationResult.checked ? (
+              verificationResult.valid ? (
+                <>
+                  <span className="flex items-center gap-1.5 rounded-full bg-success/15 px-3 py-1.5 text-xs font-semibold text-success">
+                    <ShieldCheck className="h-4 w-4" />
+                    Chain verified ({verificationResult.count} blocks intact)
+                  </span>
+                  <button
+                    onClick={verifyChain}
+                    disabled={verifying || repairing}
+                    className="flex items-center gap-1 rounded-full bg-muted/60 px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground transition cursor-pointer"
+                    title="Re-verify chain"
+                  >
+                    <RefreshCw className={cn("h-3 w-3", verifying && "animate-spin")} />
+                    Re-verify
+                  </button>
+                </>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="flex items-center gap-1.5 rounded-full bg-destructive/15 px-3 py-1.5 text-xs font-semibold text-destructive">
+                    <Ban className="h-4 w-4 shrink-0" />
+                    <span className="max-w-md truncate">{verificationResult.errorMsg}</span>
+                  </span>
+                  <button
+                    onClick={handleRepairChain}
+                    disabled={repairing || verifying}
+                    className="flex items-center gap-1.5 rounded-full bg-destructive text-white px-3.5 py-1.5 text-xs font-semibold hover:bg-destructive/90 disabled:opacity-50 transition cursor-pointer shadow-xs"
+                  >
+                    <RefreshCw className={cn("h-3.5 w-3.5", repairing && "animate-spin")} />
+                    {repairing ? "Repairing & Re-aligning..." : "Repair Chain"}
+                  </button>
+                </div>
+              )
             ) : (
-              <span className="flex items-center gap-1.5 rounded-full bg-destructive/15 px-3 py-1.5 text-xs font-semibold text-destructive">
-                <Ban className="h-4 w-4" />
-                {verificationResult.errorMsg}
-              </span>
-            )
-          ) : (
-            <button
-              onClick={verifyChain}
-              disabled={verifying || auditLog.length === 0}
-              className="flex items-center gap-1.5 rounded-full bg-brand-blue/10 px-3.5 py-1.5 text-xs font-semibold text-brand-blue hover:bg-brand-blue/20 disabled:opacity-50 transition cursor-pointer"
-            >
-              {verifying ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
-              {verifying ? "Verifying SHA-256 Chain..." : "Verify chain"}
-            </button>
-          )}
+              <button
+                onClick={verifyChain}
+                disabled={verifying || auditLog.length === 0}
+                className="flex items-center gap-1.5 rounded-full bg-brand-blue/10 px-3.5 py-1.5 text-xs font-semibold text-brand-blue hover:bg-brand-blue/20 disabled:opacity-50 transition cursor-pointer"
+              >
+                {verifying ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+                {verifying ? "Verifying SHA-256 Chain..." : "Verify chain"}
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Filter Pills */}

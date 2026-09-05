@@ -58,6 +58,7 @@ export interface FirewallStore {
   resolveApproval: (id: string, approve: boolean) => Promise<SubmitResult | undefined>;
   resetDailySpend: () => Promise<{ success: boolean; deletedCount: number }>;
   resetAgentTrust: (agentId?: string) => Promise<{ success: boolean }>;
+  alignChain: () => Promise<{ success: boolean; updatedCount: number; totalBlocks: number }>;
 
   submitRequest: (
     product: Product,
@@ -79,15 +80,14 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
   const [rules, setRules] = useState<Rules>(DEFAULT_RULES);
   const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
   const [approvals, setApprovals] = useState<any[]>([]);
-
-  const latestDecision = auditLog[0]?.decision || null;
-  const latestTxnId = auditLog[0]?.id || null;
+  const [latestDecision, setLatestDecision] = useState<Decision | null>(null);
+  const [latestTxnId, setLatestTxnId] = useState<string | null>(null);
 
   useEffect(() => {
-    const txnsRef = collection(db, "merchants/demo_merchant/transactions");
+    const q = query(collection(db, "merchants/demo_merchant/transactions"));
 
     const unsubTxns = onSnapshot(
-      txnsRef,
+      q,
       (snap) => {
         // Collect IDs of transactions that have received an outcome_update
         const resolvedTxnIds = new Set<string>();
@@ -114,11 +114,14 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
 
         // Full Verdict Chain (all transactions and outcome updates in chronological order)
         const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as AuditEntry));
-        items.sort(
-          (a, b) =>
-            new Date(b.time || b.timestamp || 0).getTime() -
-            new Date(a.time || a.timestamp || 0).getTime()
-        );
+        items.sort((a, b) => {
+          const timeA = new Date(a.time || a.timestamp || 0).getTime();
+          const timeB = new Date(b.time || b.timestamp || 0).getTime();
+          if (timeB !== timeA) return timeB - timeA;
+          if ((b as any).prevHash === (a as any).hash) return -1;
+          if ((a as any).prevHash === (b as any).hash) return 1;
+          return (b.id || "").localeCompare(a.id || "");
+        });
         setAuditLog(items);
       },
       (err) => {
@@ -469,6 +472,24 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const alignChain = useCallback(
+    async (): Promise<{ success: boolean; updatedCount: number; totalBlocks: number }> => {
+      try {
+        const res = await fetch(apiUrl("/api/audit/align"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ merchantId: "demo_merchant" }),
+        });
+        const data = await res.json();
+        return data;
+      } catch (err) {
+        console.error("Error aligning chain:", err);
+        return { success: false, updatedCount: 0, totalBlocks: 0 };
+      }
+    },
+    [],
+  );
+
   const value: FirewallStore = {
     isLoggedIn,
     merchantEmail,
@@ -482,6 +503,7 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
     dailySpent,
     resetDailySpend,
     resetAgentTrust,
+    alignChain,
     submitRequest,
     sendChatRequest,
     resolveApproval,
