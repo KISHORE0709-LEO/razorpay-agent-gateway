@@ -13,6 +13,7 @@ import {
   handleActivateCampaign,
   handleDeactivateCampaign,
 } from "./routes/campaigns";
+import { handleProductImage } from "./routes/product-image";
 
 export const app = express();
 
@@ -28,6 +29,7 @@ app.get("/api/ping", (_req, res) => {
 });
 
 app.get("/api/demo", handleDemo);
+app.get("/api/product-image", handleProductImage);
 app.post("/api/evaluate", handleEvaluate);
 app.post("/api/chat", handleChat);
 app.post("/api/resolve", handleResolve);

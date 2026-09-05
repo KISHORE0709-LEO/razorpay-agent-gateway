@@ -3,16 +3,16 @@ import { Product } from "./types";
 export const CATEGORIES = ["Electronics", "Fashion", "Groceries", "Home & Kitchen"] as const;
 
 export const CATALOG: Product[] = [
-  { id: "prod_1", name: "Wireless Bluetooth Earbuds", category: "Electronics", price: 1499, imageUrl: "https://picsum.photos/seed/prod_1/300/300" },
-  { id: "prod_2", name: "Smart Fitness Watch", category: "Electronics", price: 2999, imageUrl: "https://picsum.photos/seed/prod_2/300/300" },
-  { id: "prod_3", name: "Cotton Casual Shirt", category: "Fashion", price: 899, imageUrl: "https://picsum.photos/seed/prod_3/300/300" },
-  { id: "prod_4", name: "Running Shoes", category: "Fashion", price: 2499, imageUrl: "https://picsum.photos/seed/prod_4/300/300" },
-  { id: "prod_5", name: "Non-Stick Cookware Set", category: "Home & Kitchen", price: 3499, imageUrl: "https://picsum.photos/seed/prod_5/300/300" },
-  { id: "prod_6", name: "Electric Kettle", category: "Home & Kitchen", price: 1299, imageUrl: "https://picsum.photos/seed/prod_6/300/300" },
-  { id: "prod_7", name: "Premium Basmati Rice 5kg", category: "Groceries", price: 650, imageUrl: "https://picsum.photos/seed/prod_7/300/300" },
-  { id: "prod_8", name: "Olive Oil 1L", category: "Groceries", price: 850, imageUrl: "https://picsum.photos/seed/prod_8/300/300" },
-  { id: "prod_9", name: "Noise Cancelling Headphones", category: "Electronics", price: 7999, imageUrl: "https://picsum.photos/seed/prod_9/300/300" },
-  { id: "prod_10", name: "Formal Leather Belt", category: "Fashion", price: 499, imageUrl: "https://picsum.photos/seed/prod_10/300/300" }
+  { id: "prod_1", name: "Wireless Bluetooth Earbuds", category: "Electronics", price: 1499, imageUrl: "https://images.pexels.com/photos/3780681/pexels-photo-3780681.jpeg?auto=compress&cs=tinysrgb&h=350" },
+  { id: "prod_2", name: "Smart Fitness Watch", category: "Electronics", price: 2999, imageUrl: "https://images.pexels.com/photos/437037/pexels-photo-437037.jpeg?auto=compress&cs=tinysrgb&h=350" },
+  { id: "prod_3", name: "Cotton Casual Shirt", category: "Fashion", price: 899, imageUrl: "https://images.pexels.com/photos/297933/pexels-photo-297933.jpeg?auto=compress&cs=tinysrgb&h=350" },
+  { id: "prod_4", name: "Running Shoes", category: "Fashion", price: 2499, imageUrl: "https://images.pexels.com/photos/2529148/pexels-photo-2529148.jpeg?auto=compress&cs=tinysrgb&h=350" },
+  { id: "prod_5", name: "Non-Stick Cookware Set", category: "Home & Kitchen", price: 3499, imageUrl: "https://images.pexels.com/photos/4253127/pexels-photo-4253127.jpeg?auto=compress&cs=tinysrgb&h=350" },
+  { id: "prod_6", name: "Electric Kettle", category: "Home & Kitchen", price: 1299, imageUrl: "https://images.pexels.com/photos/4108715/pexels-photo-4108715.jpeg?auto=compress&cs=tinysrgb&h=350" },
+  { id: "prod_7", name: "Premium Basmati Rice 5kg", category: "Groceries", price: 650, imageUrl: "https://images.pexels.com/photos/4110255/pexels-photo-4110255.jpeg?auto=compress&cs=tinysrgb&h=350" },
+  { id: "prod_8", name: "Olive Oil 1L", category: "Groceries", price: 850, imageUrl: "https://images.pexels.com/photos/33783/olive-oil-salad-dressing-cooking-olive.jpg?auto=compress&cs=tinysrgb&h=350" },
+  { id: "prod_9", name: "Noise Cancelling Headphones", category: "Electronics", price: 7999, imageUrl: "https://images.pexels.com/photos/3394650/pexels-photo-3394650.jpeg?auto=compress&cs=tinysrgb&h=350" },
+  { id: "prod_10", name: "Formal Leather Belt", category: "Fashion", price: 499, imageUrl: "https://images.pexels.com/photos/45055/leather-belt-brown-metal-45055.jpeg?auto=compress&cs=tinysrgb&h=350" }
 ];
 
 const PRODUCT_KEYWORDS: { keywords: string[]; productId: string }[] = [

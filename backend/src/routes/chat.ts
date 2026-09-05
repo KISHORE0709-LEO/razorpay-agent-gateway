@@ -147,7 +147,7 @@ export const handleChat = async (req: Request, res: Response): Promise<void> => 
       return {
         id: doc.id,
         ...data,
-        imageUrl: data.imageUrl || `https://picsum.photos/seed/${doc.id}/300/300`
+        imageUrl: data.imageUrl || "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&auto=format&fit=crop&q=80"
       };
     });
 

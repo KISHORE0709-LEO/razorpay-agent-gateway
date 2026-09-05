@@ -43,7 +43,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiUrl } from "@/lib/api";
-import { CATEGORIES } from "@/lib/catalog";
+import { fetchProductImage, DEFAULT_FALLBACK_IMAGE } from "@/lib/pexels";
+import { CATEGORIES, CATALOG } from "@/lib/catalog";
 import { AGENT_ID, useFirewall, SubmitResult } from "@/lib/store";
 import { Decision, Product, Rules, Campaign, AuditEntry } from "@/lib/types";
 import { GENESIS_HASH, computeEntryHash, shortHash } from "@/lib/hash";
@@ -1131,6 +1132,9 @@ function CatalogPanel() {
     imageUrl: "",
   });
 
+  // Auto-fetch image loading state
+  const [fetchingImage, setFetchingImage] = useState(false);
+
   // Delete modal state
   const [deleteItem, setDeleteItem] = useState<Product | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -1241,6 +1245,25 @@ function CatalogPanel() {
     setModalOpen(true);
   }
 
+  async function handleAutoFetchImage() {
+    if (!form.name.trim()) return;
+    setFetchingImage(true);
+    try {
+      const finalCategory =
+        form.category === "__CUSTOM__"
+          ? form.customCategory.trim() || "General"
+          : form.category;
+      const fetchedUrl = await fetchProductImage(form.name.trim(), finalCategory);
+      if (fetchedUrl) {
+        setForm((prev) => ({ ...prev, imageUrl: fetchedUrl }));
+      }
+    } catch (err) {
+      console.error("Error auto-fetching image from Pexels:", err);
+    } finally {
+      setFetchingImage(false);
+    }
+  }
+
   async function handleSave(e: FormEvent) {
     e.preventDefault();
     if (!form.name.trim() || !form.price) return;
@@ -1252,10 +1275,12 @@ function CatalogPanel() {
           : form.category;
 
       const prodId = editingItem ? editingItem.id : `prod_${Date.now()}`;
-      const placeholderImg = `https://picsum.photos/seed/${encodeURIComponent(
-        form.name.trim(),
-      )}/300/300`;
-      const finalImg = form.imageUrl.trim() || (editingItem?.imageUrl || placeholderImg);
+      
+      let finalImg = form.imageUrl.trim();
+      // Requirement 2: If image URL is left blank, automatically call fetchProductImage
+      if (!finalImg) {
+        finalImg = await fetchProductImage(form.name.trim(), finalCategory);
+      }
 
       const data = {
         name: form.name.trim(),
@@ -1450,11 +1475,11 @@ function CatalogPanel() {
                 {/* Thumbnail Image Container */}
                 <div className="relative h-44 w-full bg-muted/60 overflow-hidden">
                   <img
-                    src={product.imageUrl || `https://picsum.photos/seed/${product.id}/300/300`}
+                    src={product.imageUrl || DEFAULT_FALLBACK_IMAGE}
                     alt={product.name}
                     className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                     onError={(e) => {
-                      (e.target as HTMLElement).style.display = "none";
+                      (e.target as HTMLImageElement).src = DEFAULT_FALLBACK_IMAGE;
                     }}
                   />
                   <span className="absolute top-3 left-3 rounded-full bg-black/60 backdrop-blur-md px-2.5 py-0.5 text-[11px] font-medium text-white shadow-sm">
@@ -1601,33 +1626,54 @@ function CatalogPanel() {
 
               {/* Image URL & Preview */}
               <div>
-                <label className="block text-xs font-semibold text-brand-navy mb-1.5">
-                  Image URL <span className="text-xs font-normal text-muted-foreground">(optional — auto-generates if empty)</span>
-                </label>
-                <input
-                  type="url"
-                  placeholder="https://... (leave empty for default placeholder)"
-                  value={form.imageUrl}
-                  onChange={(e) => setForm({ ...form, imageUrl: e.target.value })}
-                  className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm text-brand-navy outline-none transition focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/15"
-                />
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-semibold text-brand-navy">
+                    Image URL <span className="text-xs font-normal text-muted-foreground">(optional — auto-generates if empty)</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleAutoFetchImage}
+                    disabled={fetchingImage || !form.name.trim()}
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-blue hover:text-brand-blue/80 disabled:opacity-40 transition cursor-pointer"
+                    title="Auto-fetch a real photo for this product using Pexels"
+                  >
+                    <RefreshCw className={cn("h-3 w-3", fetchingImage && "animate-spin")} />
+                    <span>{fetchingImage ? "Fetching..." : "Auto-fetch image"}</span>
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    placeholder="https://... (leave empty to auto-fetch via Pexels)"
+                    value={form.imageUrl}
+                    onChange={(e) => setForm({ ...form, imageUrl: e.target.value })}
+                    className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm text-brand-navy outline-none transition focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/15"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAutoFetchImage}
+                    disabled={fetchingImage || !form.name.trim()}
+                    className="inline-flex items-center gap-1.5 shrink-0 rounded-xl border border-brand-blue/30 bg-brand-blue/10 px-3 py-2 text-xs font-semibold text-brand-blue hover:bg-brand-blue/20 disabled:opacity-40 transition cursor-pointer"
+                    title="Fetch high-res photo from Pexels based on product name"
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    Auto-fetch
+                  </button>
+                </div>
                 <div className="mt-2 flex items-center gap-3 rounded-lg border border-border/60 bg-muted/30 p-2 text-xs">
                   <img
-                    src={
-                      form.imageUrl.trim() ||
-                      `https://picsum.photos/seed/${encodeURIComponent(form.name.trim() || "product")}/300/300`
-                    }
+                    src={form.imageUrl.trim() || DEFAULT_FALLBACK_IMAGE}
                     alt="Preview"
                     className="h-10 w-10 rounded-md object-cover border border-border shrink-0"
                     onError={(e) => {
-                      (e.target as HTMLElement).style.display = "none";
+                      (e.target as HTMLImageElement).src = DEFAULT_FALLBACK_IMAGE;
                     }}
                   />
                   <div className="text-[11px] text-muted-foreground truncate">
                     Preview:{" "}
                     {form.imageUrl.trim()
-                      ? "Custom URL provided"
-                      : "Automatic placeholder based on product name"}
+                      ? "Custom URL loaded"
+                      : "Will auto-fetch from Pexels on save if left empty"}
                   </div>
                 </div>
               </div>
@@ -1671,9 +1717,12 @@ function CatalogPanel() {
 
                 <div className="mt-4 flex items-center gap-3 rounded-lg border border-border bg-background p-2.5">
                   <img
-                    src={deleteItem.imageUrl || `https://picsum.photos/seed/${deleteItem.id}/300/300`}
+                    src={deleteItem.imageUrl || DEFAULT_FALLBACK_IMAGE}
                     alt={deleteItem.name}
                     className="h-9 w-9 rounded-md object-cover border border-border shrink-0"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = DEFAULT_FALLBACK_IMAGE;
+                    }}
                   />
                   <div className="min-w-0 flex-1">
                     <div className="text-xs font-semibold text-brand-navy truncate">{deleteItem.name}</div>
@@ -2590,10 +2639,10 @@ function DecisionCard({
                   className="flex items-center gap-2.5 rounded-lg border border-border bg-background p-2 text-left transition hover:border-brand-blue/50 hover:bg-brand-blue/5 cursor-pointer group"
                 >
                   <img 
-                    src={item.imageUrl || `https://picsum.photos/seed/${item.id}/300/300`} 
+                    src={item.imageUrl || DEFAULT_FALLBACK_IMAGE} 
                     alt={item.name}
                     className="h-10 w-10 rounded-md object-cover border border-border shrink-0"
-                    onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+                    onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_FALLBACK_IMAGE; }}
                   />
                   <div className="min-w-0 flex-1">
                     <div className="text-xs font-medium text-brand-navy truncate group-hover:text-brand-blue">
@@ -2661,10 +2710,10 @@ function DecisionCard({
             {result.parsedProduct && (
               <div className="flex items-center gap-3 rounded-lg border border-border/70 bg-background/60 p-2.5">
                 <img 
-                  src={result.parsedProduct.imageUrl || `https://picsum.photos/seed/${result.parsedProduct.id}/300/300`}
+                  src={result.parsedProduct.imageUrl || DEFAULT_FALLBACK_IMAGE}
                   alt={result.parsedProduct.name}
                   className="h-12 w-12 rounded-lg object-cover border border-border/80 shrink-0 shadow-2xs"
-                  onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+                  onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_FALLBACK_IMAGE; }}
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
@@ -2735,10 +2784,10 @@ function DecisionCard({
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-2.5 min-w-0">
               <img 
-                src={result.alternative.imageUrl || `https://picsum.photos/seed/${result.alternative.id}/300/300`}
+                src={result.alternative.imageUrl || DEFAULT_FALLBACK_IMAGE}
                 alt={result.alternative.name}
                 className="h-11 w-11 rounded-md object-cover border border-border shrink-0"
-                onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+                onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_FALLBACK_IMAGE; }}
               />
               <div className="min-w-0">
                 <div className="text-xs font-semibold text-brand-navy truncate">{result.alternative.name}</div>
@@ -2786,10 +2835,10 @@ function DecisionCard({
           <div className="mt-3 flex items-start justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
               <img 
-                src={result.enhancedProduct.imageUrl || `https://picsum.photos/seed/${result.enhancedProduct.id}/300/300`}
+                src={result.enhancedProduct.imageUrl || DEFAULT_FALLBACK_IMAGE}
                 alt={result.enhancedProduct.name}
                 className="h-12 w-12 rounded-lg object-cover border border-border shrink-0 shadow-2xs"
-                onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+                onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_FALLBACK_IMAGE; }}
               />
               <div className="min-w-0">
                 <div className="text-xs font-semibold text-brand-navy truncate">{result.enhancedProduct.name}</div>
@@ -2833,10 +2882,10 @@ function DecisionCard({
           {result.parsedProduct && (
             <div className="flex items-center gap-2.5 rounded-md border border-warning/20 bg-background/50 p-2">
               <img 
-                src={result.parsedProduct.imageUrl || `https://picsum.photos/seed/${result.parsedProduct.id}/300/300`}
+                src={result.parsedProduct.imageUrl || DEFAULT_FALLBACK_IMAGE}
                 alt={result.parsedProduct.name}
                 className="h-10 w-10 rounded-md object-cover border border-border shrink-0"
-                onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+                onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_FALLBACK_IMAGE; }}
               />
               <div className="min-w-0 flex-1">
                 <div className="text-xs font-medium text-brand-navy truncate">{result.parsedProduct.name}</div>
@@ -3211,6 +3260,13 @@ function VerdictDetailModal({
     Activity,
   ];
 
+  const catalogItem = CATALOG.find(
+    (p) =>
+      p.id === (entry as any).productId ||
+      p.name.toLowerCase() === (entry.product || "").toLowerCase()
+  );
+  const productImageUrl = (entry as any).imageUrl || catalogItem?.imageUrl;
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
@@ -3223,9 +3279,25 @@ function VerdictDetailModal({
         {/* Modal Header */}
         <div className="flex items-start justify-between border-b border-border pb-4">
           <div className="flex items-center gap-3">
-            <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl", bgCol, textCol)}>
-              <Icon className="h-5 w-5" />
-            </div>
+            {productImageUrl ? (
+              <div className="relative h-12 w-12 shrink-0 rounded-xl overflow-hidden border border-border bg-muted/40 shadow-xs">
+                <img
+                  src={productImageUrl}
+                  alt={entry.product || "Product"}
+                  className="h-full w-full object-cover"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = DEFAULT_FALLBACK_IMAGE;
+                  }}
+                />
+                <div className={cn("absolute bottom-0 right-0 p-0.5 rounded-tl-md", bgCol, textCol)}>
+                  <Icon className="h-3.5 w-3.5" />
+                </div>
+              </div>
+            ) : (
+              <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl", bgCol, textCol)}>
+                <Icon className="h-5 w-5" />
+              </div>
+            )}
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-lg font-bold text-brand-navy">{entry.product || "Transaction"}</h3>
@@ -3466,6 +3538,13 @@ function VerdictChainRow({
 
   const Icon = itemConfig[3];
 
+  const catalogItem = CATALOG.find(
+    (p) =>
+      p.id === (entry as any).productId ||
+      p.name.toLowerCase() === (entry.product || "").toLowerCase()
+  );
+  const productImageUrl = (entry as any).imageUrl || catalogItem?.imageUrl;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: -10 }}
@@ -3477,9 +3556,25 @@ function VerdictChainRow({
       )}
     >
       <div className="flex items-start gap-3">
-        <div className={cn("mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", itemConfig[2])}>
-          <Icon className={cn("h-4 w-4", itemConfig[1])} />
-        </div>
+        {productImageUrl ? (
+          <div className="relative mt-0.5 h-9 w-9 shrink-0 rounded-lg overflow-hidden border border-border bg-muted/30">
+            <img
+              src={productImageUrl}
+              alt={entry.product || "Product"}
+              className="h-full w-full object-cover"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = DEFAULT_FALLBACK_IMAGE;
+              }}
+            />
+            <div className={cn("absolute bottom-0 right-0 p-0.5 rounded-tl-sm", itemConfig[2])}>
+              <Icon className={cn("h-2.5 w-2.5", itemConfig[1])} />
+            </div>
+          </div>
+        ) : (
+          <div className={cn("mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", itemConfig[2])}>
+            <Icon className={cn("h-4 w-4", itemConfig[1])} />
+          </div>
+        )}
 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
