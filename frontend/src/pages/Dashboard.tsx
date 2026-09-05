@@ -19,28 +19,21 @@ import {
   Copy,
   CreditCard,
   Edit3,
-  ExternalLink,
   Eye,
   EyeOff,
-  Globe,
   HelpCircle,
-  Key,
   LayoutDashboard,
   LogOut,
-  Mail,
-  MapPin,
   Menu,
   MessageSquare,
   Package,
   PanelLeft,
   PanelLeftClose,
-  Phone,
   Plus,
   RefreshCw,
   Save,
   Search,
   Settings2,
-  Shield,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -792,7 +785,7 @@ function StatDrillDownModal({
                                 : "bg-destructive/15 text-destructive border border-destructive/30"
                             )}
                           >
-                            RESOLVED: {linkedOutcome.outcome.toUpperCase()}
+                            RESOLVED: {(linkedOutcome.outcome || "RESOLVED").toUpperCase()}
                           </span>
                         )}
                         {entry.savedAmount ? (
@@ -4053,7 +4046,6 @@ function MerchantProfilePanel() {
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [hasLoadedFromDb, setHasLoadedFromDb] = useState(false);
 
   // Load from Firestore
   useEffect(() => {
@@ -4068,11 +4060,9 @@ function MerchantProfilePanel() {
             ...data,
           }));
         }
-        setHasLoadedFromDb(true);
       },
       (err) => {
         console.warn("Could not load merchant profile from Firestore:", err);
-        setHasLoadedFromDb(true);
       }
     );
     return () => unsub();
