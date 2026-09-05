@@ -6,6 +6,7 @@ import {
   useMemo,
   useState,
   useEffect,
+  useRef,
 } from "react";
 import { ApprovalItem, AuditEntry, Decision, Product, Rules } from "./types";
 import { db } from "./firebase";
@@ -80,6 +81,7 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
   const [rules, setRules] = useState<Rules>(DEFAULT_RULES);
   const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
   const [approvals, setApprovals] = useState<any[]>([]);
+  const inFlightResolutions = useRef<Set<string>>(new Set());
 
   const latestDecision = auditLog[0]?.decision || null;
   const latestTxnId = auditLog[0]?.id || null;
@@ -99,11 +101,15 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
           }
         });
 
-        // Pending approvals: escalated transactions that have not yet been resolved
+        // Pending approvals: escalated transactions that have not yet been resolved and not in-flight
         const pendingItems = snap.docs
           .filter((d: any) => {
             const data = d.data();
-            return data.decision === "escalated" && !resolvedTxnIds.has(d.id);
+            return (
+              data.decision === "escalated" &&
+              !resolvedTxnIds.has(d.id) &&
+              !inFlightResolutions.current.has(d.id)
+            );
           })
           .map((d: any) => ({ id: d.id, ...d.data() } as any));
         pendingItems.sort(
@@ -452,21 +458,47 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
 
   const resolveApproval = useCallback(
     async (id: string, approve: boolean): Promise<SubmitResult | undefined> => {
+      // Optimistic instant removal from UI
+      inFlightResolutions.current.add(id);
+      let removedItem: any = null;
+      setApprovals((prev) => {
+        removedItem = prev.find((item) => item.id === id);
+        return prev.filter((item) => item.id !== id);
+      });
+
       try {
         const res = await fetch(apiUrl("/api/resolve"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ transactionId: id, approve }),
         });
+
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));
           const errMsg = errData.error || errData.reason || "Failed to resolve approval";
           console.error("Failed to resolve approval:", errMsg);
+          // Rollback on server rejection
+          inFlightResolutions.current.delete(id);
+          if (removedItem) {
+            setApprovals((prev) => (prev.some((it) => it.id === id) ? prev : [removedItem, ...prev]));
+          }
           alert(errMsg);
+          return undefined;
         }
-        return undefined; // Real-time UI will update via Firestore listeners
+
+        // Successfully resolved: clear in-flight tracker after brief grace period for Firestore propagation
+        setTimeout(() => {
+          inFlightResolutions.current.delete(id);
+        }, 3000);
+
+        return undefined;
       } catch (err) {
         console.error("Error resolving approval:", err);
+        // Rollback on network error
+        inFlightResolutions.current.delete(id);
+        if (removedItem) {
+          setApprovals((prev) => (prev.some((it) => it.id === id) ? prev : [removedItem, ...prev]));
+        }
         return undefined;
       }
     },

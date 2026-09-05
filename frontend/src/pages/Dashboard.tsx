@@ -3333,6 +3333,20 @@ function DecisionCard({
 
 function ApprovalsPanel() {
   const { resolveApproval, approvals, rules, dailySpent } = useFirewall();
+  const [resolvingIds, setResolvingIds] = useState<Set<string>>(new Set());
+
+  const handleAction = async (id: string, approve: boolean) => {
+    setResolvingIds((prev) => new Set(prev).add(id));
+    try {
+      await resolveApproval(id, approve);
+    } finally {
+      setResolvingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
 
   return (
     <div className="space-y-7">
@@ -3349,6 +3363,7 @@ function ApprovalsPanel() {
           <AnimatePresence>
             {approvals.map((item) => {
               const wouldExceedLimit = rules.dailyLimit > 0 && (dailySpent + (item.amount || 0)) > rules.dailyLimit;
+              const isResolving = resolvingIds.has(item.id);
               return (
               <motion.div
                 key={item.id}
@@ -3391,17 +3406,19 @@ function ApprovalsPanel() {
                 </div>
                 <div className="flex shrink-0 gap-2">
                   <button
-                    onClick={() => resolveApproval(item.id, false)}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-destructive/20 px-3 py-2 text-xs font-semibold text-destructive hover:bg-destructive/5 transition"
+                    onClick={() => handleAction(item.id, false)}
+                    disabled={isResolving}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-destructive/20 px-3 py-2 text-xs font-semibold text-destructive hover:bg-destructive/5 transition disabled:opacity-50 cursor-pointer"
                   >
-                    <X className="h-3.5 w-3.5" />
+                    {isResolving ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
                     Deny
                   </button>
                   <button
-                    onClick={() => resolveApproval(item.id, true)}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-success px-3.5 py-2 text-xs font-semibold text-white hover:brightness-105 transition"
+                    onClick={() => handleAction(item.id, true)}
+                    disabled={isResolving}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-success px-3.5 py-2 text-xs font-semibold text-white hover:brightness-105 transition disabled:opacity-50 cursor-pointer"
                   >
-                    <Check className="h-3.5 w-3.5" />
+                    {isResolving ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
                     Approve
                   </button>
                 </div>

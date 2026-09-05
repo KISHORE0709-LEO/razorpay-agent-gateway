@@ -25,7 +25,20 @@ export const handleResolve: RequestHandler = async (req, res): Promise<any> => {
     }
 
     const txRef = doc(db, "merchants/demo_merchant/transactions", transactionId);
-    const txSnap = await getDoc(txRef);
+    const txnsRef = collection(db, "merchants/demo_merchant/transactions");
+
+    const existingUpdatesQuery = query(
+      txnsRef,
+      where("type", "==", "outcome_update"),
+      where("relatedTransactionId", "==", transactionId),
+      limit(1)
+    );
+
+    // Fetch transaction data and existing resolution check in parallel
+    const [txSnap, existingUpdatesSnap] = await Promise.all([
+      getDoc(txRef),
+      getDocs(existingUpdatesQuery),
+    ]);
 
     if (!txSnap.exists()) {
       return res.status(404).json({ error: "Transaction not found" });
@@ -36,30 +49,30 @@ export const handleResolve: RequestHandler = async (req, res): Promise<any> => {
       return res.status(400).json({ error: "Transaction is not an escalated request" });
     }
 
-    // Check if this transaction already has an outcome_update
-    const txnsRef = collection(db, "merchants/demo_merchant/transactions");
-    const existingUpdatesQuery = query(
-      txnsRef,
-      where("type", "==", "outcome_update"),
-      where("relatedTransactionId", "==", transactionId)
-    );
-    const existingUpdatesSnap = await getDocs(existingUpdatesQuery);
     if (!existingUpdatesSnap.empty) {
       return res.status(400).json({ error: "Transaction has already been resolved" });
     }
 
     let order: any = null;
+    const sideEffectPromises: Promise<any>[] = [];
 
     if (approve) {
       const orderAmount = Number(txData.amount ?? txData.requestedAmount ?? 0);
-
-      // Re-check daily spend limit at the moment of approval
+      const orderProduct = txData.product ?? txData.productId ?? "Goods";
       const rulesRef = doc(db, "merchants/demo_merchant/rules/current");
-      const rulesSnap = await getDoc(rulesRef);
+
+      // Parallelize checking rules, today's spend, and initiating Razorpay order creation
+      const [rulesSnap, liveTodaySpent, orderResult] = await Promise.all([
+        getDoc(rulesRef),
+        getMerchantTodayApprovedSpend("demo_merchant"),
+        createRazorpayOrder(orderAmount, orderProduct).catch((err: any) => {
+          console.error("Razorpay order creation error during approval:", err);
+          return null;
+        }),
+      ]);
+
       const rules = rulesSnap.exists() ? rulesSnap.data() : null;
       const dailySpendLimit = Number(rules?.dailySpendLimit || 0);
-
-      const liveTodaySpent = await getMerchantTodayApprovedSpend("demo_merchant");
 
       if (dailySpendLimit > 0 && liveTodaySpent + orderAmount > dailySpendLimit) {
         return res.status(400).json({
@@ -72,47 +85,44 @@ export const handleResolve: RequestHandler = async (req, res): Promise<any> => {
         });
       }
 
-      try {
-        const orderProduct = txData.product ?? txData.productId ?? "Goods";
-        order = await createRazorpayOrder(orderAmount, orderProduct);
+      order = orderResult;
 
-        // Update daily spend document
-        const dateKey = new Date().toISOString().split("T")[0];
-        const agentId = txData.agent || txData.agentId || "agt_live_7f3c9e";
-        const dailySpendRef = doc(db, `merchants/demo_merchant/dailySpend/${agentId}_${dateKey}`);
-        const spendSnap = await getDoc(dailySpendRef);
-        const currentSpent = spendSnap.exists() ? Number(spendSnap.data().amount || 0) : 0;
-        const currentCount = spendSnap.exists() ? Number(spendSnap.data().count || 0) : 0;
-        await setDoc(
-          dailySpendRef,
-          {
-            agentId,
-            date: dateKey,
-            amount: currentSpent + orderAmount,
-            count: currentCount + 1,
-            updatedAt: new Date().toISOString(),
-          },
-          { merge: true }
-        );
-      } catch (err: any) {
-        console.error("Razorpay order creation error during approval:", err);
-      }
+      // Update daily spend document & agent trust score in parallel
+      const dateKey = new Date().toISOString().split("T")[0];
+      const agentId = txData.agent || txData.agentId || "agt_live_7f3c9e";
+      const dailySpendRef = doc(db, `merchants/demo_merchant/dailySpend/${agentId}_${dateKey}`);
 
-      // Update agent trust score for approved escalation (+2)
-      try {
-        const agentId = txData.agent || txData.agentId || "agt_live_7f3c9e";
-        await updateAgentTrustOnTransaction("demo_merchant", agentId, "approved");
-      } catch (err) {
-        console.error("Failed to update agent trust on approval:", err);
-      }
+      sideEffectPromises.push(
+        getDoc(dailySpendRef).then(async (spendSnap) => {
+          const currentSpent = spendSnap.exists() ? Number(spendSnap.data().amount || 0) : 0;
+          const currentCount = spendSnap.exists() ? Number(spendSnap.data().count || 0) : 0;
+          await setDoc(
+            dailySpendRef,
+            {
+              agentId,
+              date: dateKey,
+              amount: currentSpent + orderAmount,
+              count: currentCount + 1,
+              updatedAt: new Date().toISOString(),
+            },
+            { merge: true }
+          );
+        }).catch((err) => console.error("Error updating daily spend:", err))
+      );
+
+      sideEffectPromises.push(
+        updateAgentTrustOnTransaction("demo_merchant", agentId, "approved").catch((err) =>
+          console.error("Failed to update agent trust on approval:", err)
+        )
+      );
     } else {
       // Update agent trust score for denied escalation (-5)
-      try {
-        const agentId = txData.agent || txData.agentId || "agt_live_7f3c9e";
-        await updateAgentTrustOnTransaction("demo_merchant", agentId, "denied_escalation");
-      } catch (err) {
-        console.error("Failed to update agent trust on denial:", err);
-      }
+      const agentId = txData.agent || txData.agentId || "agt_live_7f3c9e";
+      sideEffectPromises.push(
+        updateAgentTrustOnTransaction("demo_merchant", agentId, "denied_escalation").catch((err) =>
+          console.error("Failed to update agent trust on denial:", err)
+        )
+      );
     }
 
     const outcome: "approved" | "denied" = approve ? "approved" : "denied";
@@ -136,45 +146,48 @@ export const handleResolve: RequestHandler = async (req, res): Promise<any> => {
       outcomeUpdateData.razorpayOrderId = order.id;
     }
 
-    const { docRef, hash } = await withChainLock(async () => {
-      const lastTxnQuery = query(txnsRef, orderBy("time", "desc"), limit(1));
-      const lastTxnSnap = await getDocs(lastTxnQuery);
-      let prev = GENESIS_HASH;
-      let lastTimeMs = 0;
-      if (!lastTxnSnap.empty) {
-        const lastDoc = lastTxnSnap.docs[0].data();
-        prev = lastDoc.hash || GENESIS_HASH;
-        const lastTimeStr = lastDoc.timestamp || lastDoc.time;
-        if (lastTimeStr) {
-          lastTimeMs = new Date(lastTimeStr).getTime();
+    const [chainResult] = await Promise.all([
+      withChainLock(async () => {
+        const lastTxnQuery = query(txnsRef, orderBy("time", "desc"), limit(1));
+        const lastTxnSnap = await getDocs(lastTxnQuery);
+        let prev = GENESIS_HASH;
+        let lastTimeMs = 0;
+        if (!lastTxnSnap.empty) {
+          const lastDoc = lastTxnSnap.docs[0].data();
+          prev = lastDoc.hash || GENESIS_HASH;
+          const lastTimeStr = lastDoc.timestamp || lastDoc.time;
+          if (lastTimeStr) {
+            lastTimeMs = new Date(lastTimeStr).getTime();
+          }
         }
-      }
 
-      const nowMs = Math.max(Date.now(), lastTimeMs + 1);
-      const monotonicTimestamp = new Date(nowMs).toISOString();
-      outcomeUpdateData.timestamp = monotonicTimestamp;
-      outcomeUpdateData.time = monotonicTimestamp;
-      outcomeUpdateData.prevHash = prev;
+        const nowMs = Math.max(Date.now(), lastTimeMs + 1);
+        const monotonicTimestamp = new Date(nowMs).toISOString();
+        outcomeUpdateData.timestamp = monotonicTimestamp;
+        outcomeUpdateData.time = monotonicTimestamp;
+        outcomeUpdateData.prevHash = prev;
 
-      // Compute hash strictly using immutable fields
-      const computedHash = computeOutcomeUpdateHash(prev, {
-        timestamp: monotonicTimestamp,
-        relatedTransactionId: transactionId,
-        outcome,
-        reason,
-      });
-      outcomeUpdateData.hash = computedHash;
+        // Compute hash strictly using immutable fields
+        const computedHash = computeOutcomeUpdateHash(prev, {
+          timestamp: monotonicTimestamp,
+          relatedTransactionId: transactionId,
+          outcome,
+          reason,
+        });
+        outcomeUpdateData.hash = computedHash;
 
-      // Create NEW document in transactions collection.
-      // The original escalated document (txRef) is NEVER mutated!
-      const createdRef = await addDoc(txnsRef, outcomeUpdateData);
-      return { docRef: createdRef, hash: computedHash };
-    });
+        // Create NEW document in transactions collection.
+        // The original escalated document (txRef) is NEVER mutated!
+        const createdRef = await addDoc(txnsRef, outcomeUpdateData);
+        return { docRef: createdRef, hash: computedHash };
+      }),
+      Promise.all(sideEffectPromises),
+    ]);
 
     return res.json({
       success: true,
-      outcomeUpdateId: docRef.id,
-      hash,
+      outcomeUpdateId: chainResult.docRef.id,
+      hash: chainResult.hash,
       orderId: order?.id,
     });
   } catch (err) {
