@@ -126,7 +126,7 @@ export async function evaluatePurchaseRequest(
     reason = overrideDecision === "approved" ? "Approved by merchant" : "Manually denied by merchant";
   } else if (isEnhanceAcceptance) {
     decision = "approved";
-    reason = `Enhance offer: upgraded to ${product.name} within policy limits`;
+    reason = `Accepted enhance offer — purchased ${product.name} at ₹${requestedAmount.toLocaleString("en-IN")}`;
   } else {
     // 2. Check category allow-list (HARD LIMIT - NEVER overridden by trust score)
     const allowed = Array.isArray(rules.allowedCategories)

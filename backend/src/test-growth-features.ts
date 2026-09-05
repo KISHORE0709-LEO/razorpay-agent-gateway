@@ -22,14 +22,7 @@ async function runTests() {
   const currentSpent = await getMerchantTodayApprovedSpend(merchantId);
   console.log(`Current spend today: ₹${currentSpent} (Daily limit: ₹${origDailyLimit})`);
 
-  // Grant temporary headroom so growth test passes without daily spend cap blockage
-  if (currentSpent + 25000 >= origDailyLimit) {
-    console.log(`Adjusting daily limit temporarily for test to ₹${currentSpent + 100000}`);
-    await setDoc(doc(db, `merchants/${merchantId}/rules/current`), {
-      ...baseRules,
-      dailySpendLimit: currentSpent + 100000,
-    });
-  }
+
 
   const catalogSnap = await getDocs(collection(db, `merchants/${merchantId}/catalog`));
   const catalog = catalogSnap.docs.map((d) => ({ id: d.id, ...d.data() } as any));
@@ -96,8 +89,8 @@ async function runTests() {
   if (acceptEval.decision !== "approved" && acceptEval.decision !== "escalated") {
     throw new Error(`Expected approved/escalated on upgrade, got '${acceptEval.decision}'`);
   }
-  if (!acceptEval.reason.includes("Enhance offer: upgraded to")) {
-    throw new Error(`Expected reason to include 'Enhance offer: upgraded to', got '${acceptEval.reason}'`);
+  if (!acceptEval.reason.includes("Accepted enhance offer — purchased")) {
+    throw new Error(`Expected reason to include 'Accepted enhance offer — purchased', got '${acceptEval.reason}'`);
   }
   console.log(`✓ Accept upgrade successfully approved and logged with enhance audit reason!`);
 

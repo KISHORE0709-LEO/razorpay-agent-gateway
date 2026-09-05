@@ -18,14 +18,16 @@ import { Activity, TrendingUp, ShieldAlert, CheckCircle2 } from "lucide-react";
 
 interface OverviewChartsProps {
   auditLog: AuditEntry[];
+  primaryTodayLog: AuditEntry[];
   rules: Rules;
   dailySpent: number;
 }
 
-export function OverviewCharts({ auditLog, rules, dailySpent }: OverviewChartsProps) {
+export function OverviewCharts({ auditLog, primaryTodayLog, rules, dailySpent }: OverviewChartsProps) {
   const currentHour = new Date().getHours();
 
   // 1. Data for "Decision activity today" (grouped by hour)
+  // Pulls directly from primaryTodayLog to ensure 100% parity with "Requests today" KPI
   const decisionActivityData = useMemo(() => {
     // 24 hours of today: 00:00 to 23:00
     const hours = Array.from({ length: 24 }, (_, i) => {
@@ -34,50 +36,41 @@ export function OverviewCharts({ auditLog, rules, dailySpent }: OverviewChartsPr
         hour: hourStr,
         hourNum: i,
         approved: 0,
+        enhanced: 0,
         recovered: 0,
         escalated: 0,
         blocked: 0,
+        other: 0,
         total: 0,
       };
     });
 
-    for (const entry of auditLog) {
+    for (const entry of primaryTodayLog) {
       const timeVal = entry.time || entry.timestamp;
-      if (!isToday(timeVal)) continue;
-
-      const d = new Date(timeVal!);
+      const d = new Date(timeVal || 0);
       if (isNaN(d.getTime())) continue;
 
       const h = d.getHours();
       if (h < 0 || h > 23) continue;
 
-      if (entry.type === "outcome_update") {
-        if (entry.outcome === "approved") {
-          hours[h].approved += 1;
-          hours[h].total += 1;
-        } else if (entry.outcome === "denied") {
-          hours[h].blocked += 1;
-          hours[h].total += 1;
-        }
+      if (entry.decision === "approved") {
+        hours[h].approved += 1;
+      } else if (entry.decision === "enhanced") {
+        hours[h].enhanced += 1;
+      } else if (entry.decision === "recovered") {
+        hours[h].recovered += 1;
+      } else if (entry.decision === "escalated") {
+        hours[h].escalated += 1;
+      } else if (entry.decision === "blocked") {
+        hours[h].blocked += 1;
       } else {
-        if (entry.decision === "approved") {
-          hours[h].approved += 1;
-          hours[h].total += 1;
-        } else if (entry.decision === "recovered") {
-          hours[h].recovered += 1;
-          hours[h].total += 1;
-        } else if (entry.decision === "escalated") {
-          hours[h].escalated += 1;
-          hours[h].total += 1;
-        } else if (entry.decision === "blocked") {
-          hours[h].blocked += 1;
-          hours[h].total += 1;
-        }
+        hours[h].other += 1;
       }
+      hours[h].total += 1;
     }
 
     return hours;
-  }, [auditLog]);
+  }, [primaryTodayLog]);
 
   // 2. Data for "Daily spend vs limit" (cumulative approved spend across today)
   const spendVsLimitData = useMemo(() => {
@@ -158,9 +151,7 @@ export function OverviewCharts({ auditLog, rules, dailySpent }: OverviewChartsPr
   const spendPercentage = rules.dailyLimit > 0 ? (dailySpent / rules.dailyLimit) * 100 : 0;
   const isLimitReached = dailySpent >= rules.dailyLimit && rules.dailyLimit > 0;
 
-  const totalDecisionsToday = useMemo(() => {
-    return decisionActivityData.reduce((acc, h) => acc + h.total, 0);
-  }, [decisionActivityData]);
+  const totalDecisionsToday = primaryTodayLog.length;
 
   return (
     <div className="grid gap-5 lg:grid-cols-2">
@@ -206,6 +197,7 @@ export function OverviewCharts({ auditLog, rules, dailySpent }: OverviewChartsPr
                   wrapperStyle={{ fontSize: 11, paddingTop: 10 }}
                 />
                 <Bar dataKey="approved" name="Approved" stackId="a" fill="#10b981" />
+                <Bar dataKey="enhanced" name="Enhanced" stackId="a" fill="#6366f1" />
                 <Bar dataKey="recovered" name="Recovered" stackId="a" fill="#0d63f8" />
                 <Bar dataKey="escalated" name="Escalated" stackId="a" fill="#f59e0b" />
                 <Bar dataKey="blocked" name="Blocked" stackId="a" fill="#ef4444" radius={[3, 3, 0, 0]} />
@@ -215,10 +207,14 @@ export function OverviewCharts({ auditLog, rules, dailySpent }: OverviewChartsPr
         </div>
 
         <div className="mt-3 flex items-center justify-between border-t border-border/50 pt-3 text-[11px] text-muted-foreground">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <span className="inline-flex items-center gap-1 text-success">
               <span className="h-1.5 w-1.5 rounded-full bg-success" />
               Green: Auto-Approved
+            </span>
+            <span className="inline-flex items-center gap-1 text-[#6366f1]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#6366f1]" />
+              Purple: Enhanced
             </span>
             <span className="inline-flex items-center gap-1 text-destructive">
               <span className="h-1.5 w-1.5 rounded-full bg-destructive" />
@@ -353,6 +349,13 @@ function CustomDecisionTooltip({ active, payload, label }: any) {
             Approved
           </span>
           <span className="font-mono font-semibold">{data.approved}</span>
+        </div>
+        <div className="flex items-center justify-between gap-4 text-[#6366f1]">
+          <span className="flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-[#6366f1]" />
+            Enhanced
+          </span>
+          <span className="font-mono font-semibold">{data.enhanced}</span>
         </div>
         <div className="flex items-center justify-between gap-4 text-[#0d63f8]">
           <span className="flex items-center gap-1.5">

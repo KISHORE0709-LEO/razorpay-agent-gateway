@@ -370,7 +370,7 @@ function Overview({
         </div>
       </div>
       
-      <OverviewCharts auditLog={auditLog} rules={rules} dailySpent={dailySpent} />
+      <OverviewCharts auditLog={auditLog} primaryTodayLog={primaryTodayLog} rules={rules} dailySpent={dailySpent} />
 
       <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
         <section className="rounded-2xl border border-brand-blue/20 bg-card p-6">
