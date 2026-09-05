@@ -9,26 +9,38 @@ import {
   ArrowUp,
   ArrowUpRight,
   Ban,
+  Bell,
   Bot,
+  Building2,
   Check,
   CheckCircle2,
   ChevronRight,
   Clock3,
   Copy,
+  CreditCard,
   Edit3,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  Globe,
   HelpCircle,
+  Key,
   LayoutDashboard,
   LogOut,
+  Mail,
+  MapPin,
   Menu,
   MessageSquare,
   Package,
   PanelLeft,
   PanelLeftClose,
+  Phone,
   Plus,
   RefreshCw,
   Save,
   Search,
   Settings2,
+  Shield,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -60,6 +72,7 @@ const NAV = [
   { id: "approvals", label: "Approval Queue", icon: Clock3 },
   { id: "campaigns", label: "Campaigns", icon: Sparkles },
   { id: "audit", label: "Verdict Chain", icon: Activity },
+  { id: "settings", label: "Merchant Profile", icon: Building2 },
 ] as const;
 type Tab = (typeof NAV)[number]["id"];
 
@@ -106,14 +119,48 @@ export default function Dashboard() {
           </nav>
         </div>
         <div className="mt-auto border-t border-white/10 p-4">
-          <div className="mb-3 flex items-center gap-3 rounded-lg bg-white/5 p-3"><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-blue/20 text-xs font-semibold text-brand-blue">{merchantEmail?.[0]?.toUpperCase() ?? "M"}</div><div className="min-w-0"><div className="truncate text-xs font-medium text-white">{merchantEmail}</div><div className="text-[10px] text-white/40">Merchant workspace</div></div></div>
+          <button 
+            onClick={() => setTab("settings")}
+            className="mb-3 flex w-full items-center gap-3 rounded-lg bg-white/5 p-3 text-left transition hover:bg-white/10 cursor-pointer group"
+            title="Edit Merchant Profile & Settings"
+          >
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-blue/20 text-xs font-semibold text-brand-blue group-hover:bg-brand-blue group-hover:text-white transition">
+              {merchantEmail?.[0]?.toUpperCase() ?? "M"}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-xs font-medium text-white">{merchantEmail}</div>
+              <div className="text-[10px] text-white/40 group-hover:text-brand-blue/80 transition">Merchant Settings · Edit</div>
+            </div>
+            <ChevronRight className="h-3.5 w-3.5 text-white/30 group-hover:text-white group-hover:translate-x-0.5 transition" />
+          </button>
           <button onClick={signOut} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-white/45 transition hover:bg-white/5 hover:text-white"><LogOut className="h-4 w-4" />Sign out</button>
         </div>
       </aside>
       <div className={cn("min-w-0 flex-1 transition-[padding] duration-300 ease-out flex flex-col h-full overflow-hidden", sidebarOpen ? "pl-72" : "pl-0")}>
         <header className="flex h-16 sm:h-20 shrink-0 items-center justify-between border-b border-border bg-card px-5 sm:px-8">
-          <div className="flex items-center gap-3"><div className="flex items-center gap-1"><button onClick={() => setSidebarOpen((open) => !open)} className="rounded-lg p-2 text-muted-foreground transition hover:bg-muted hover:text-brand-navy" title={sidebarOpen ? "Close sidebar" : "Open sidebar"}><Menu className="h-4 w-4" /></button></div><div><h1 className="text-lg font-semibold capitalize">{tab === "chat" ? "AI Buyer" : tab === "rules" ? "Firewall Rules" : tab === "catalog" ? "Product Catalog" : tab === "campaigns" ? "Growth Campaigns" : tab === "audit" ? "Verdict Chain" : tab === "approvals" ? "Approval Queue" : "Overview"}</h1></div></div>
-          <div className="flex items-center gap-3"><div className="hidden items-center gap-2 rounded-full border border-success/20 bg-success/10 px-3 py-1.5 text-xs font-medium text-success sm:flex"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-success" />System operational</div><div className="h-8 w-8 rounded-full bg-brand-blue/10 text-center text-xs leading-8 font-semibold text-brand-navy">{merchantEmail?.[0]?.toUpperCase() ?? "M"}</div></div>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1">
+              <button onClick={() => setSidebarOpen((open) => !open)} className="rounded-lg p-2 text-muted-foreground transition hover:bg-muted hover:text-brand-navy" title={sidebarOpen ? "Close sidebar" : "Open sidebar"}><Menu className="h-4 w-4" /></button>
+            </div>
+            <div>
+              <h1 className="text-lg font-semibold capitalize">
+                {tab === "chat" ? "AI Buyer" : tab === "rules" ? "Firewall Rules" : tab === "catalog" ? "Product Catalog" : tab === "campaigns" ? "Growth Campaigns" : tab === "audit" ? "Verdict Chain" : tab === "approvals" ? "Approval Queue" : tab === "settings" ? "Merchant Profile & Settings" : "Overview"}
+              </h1>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="hidden items-center gap-2 rounded-full border border-success/20 bg-success/10 px-3 py-1.5 text-xs font-medium text-success sm:flex">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-success" />
+              System operational
+            </div>
+            <button
+              onClick={() => setTab("settings")}
+              className="flex items-center justify-center h-8 w-8 rounded-full bg-brand-blue/10 border border-brand-blue/20 text-center text-xs font-semibold text-brand-navy hover:bg-brand-blue hover:text-white transition cursor-pointer"
+              title="Merchant Profile & Settings"
+            >
+              {merchantEmail?.[0]?.toUpperCase() ?? "M"}
+            </button>
+          </div>
         </header>
         <main className={cn("mx-auto w-full max-w-[1500px] flex-1 min-h-0", tab === "chat" ? "p-3 sm:p-4 lg:p-5 flex flex-col overflow-hidden" : "p-5 sm:p-8 overflow-y-auto")}>
           {tab === "overview" && <Overview onTab={setTab} onNavigateToAudit={handleNavigateToAudit} />}
@@ -123,6 +170,7 @@ export default function Dashboard() {
           {tab === "approvals" && <ApprovalsPanel />}
           {tab === "campaigns" && <CampaignsPanel />}
           {tab === "audit" && <AuditPanel initialFilter={auditFilter} onFilterChange={setAuditFilter} />}
+          {tab === "settings" && <MerchantProfilePanel />}
         </main>
       </div>
     </div>
@@ -3901,6 +3949,644 @@ function EmptyState({
           {actionLabel}
         </button>
       )}
+    </div>
+  );
+}
+
+interface MerchantProfileData {
+  businessName: string;
+  contactEmail: string;
+  contactPhone: string;
+  businessCategory: string;
+  gstin: string;
+  address: string;
+  razorpayKeyId: string;
+  razorpayKeySecret: string;
+  gatewayMode: "test" | "live";
+  autoCapture: boolean;
+  webhookSecret: string;
+  agentApiKey: string;
+  defaultTrustScore: number;
+  strictAgentAuth: boolean;
+  alertOnEscalation: boolean;
+  alertOnSpendCap: boolean;
+  alertOnAuditTamper: boolean;
+}
+
+const DEFAULT_PROFILE: MerchantProfileData = {
+  businessName: "SentryPay Retail & Autonomous Systems",
+  contactEmail: "demo@razorpay.com",
+  contactPhone: "+91 98765 43210",
+  businessCategory: "E-Commerce & Digital Retail",
+  gstin: "29AAAAA0000A1Z5",
+  address: "Level 4, Embassy TechVillage, Outer Ring Rd, Bellandur, Bengaluru, Karnataka 560103",
+  razorpayKeyId: "rzp_test_1DP5mmOlF5G5ag",
+  razorpayKeySecret: "s3cr3t_t3st_k3y_98234razorpay",
+  gatewayMode: "test",
+  autoCapture: true,
+  webhookSecret: "whsec_9a8b7c6d5e4f3a2b1c",
+  agentApiKey: "sp_live_ag_9f2e7b8a1c4d603e",
+  defaultTrustScore: 85,
+  strictAgentAuth: true,
+  alertOnEscalation: true,
+  alertOnSpendCap: true,
+  alertOnAuditTamper: true,
+};
+
+function MerchantProfilePanel() {
+  const { merchantEmail, setMerchantEmail, rules } = useFirewall();
+  const [profile, setProfile] = useState<MerchantProfileData>({
+    ...DEFAULT_PROFILE,
+    contactEmail: merchantEmail || DEFAULT_PROFILE.contactEmail,
+  });
+  const [showSecret, setShowSecret] = useState(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [hasLoadedFromDb, setHasLoadedFromDb] = useState(false);
+
+  // Load from Firestore
+  useEffect(() => {
+    const profileRef = doc(db, "merchants", "demo_merchant", "profile", "current");
+    const unsub = onSnapshot(
+      profileRef,
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data() as Partial<MerchantProfileData>;
+          setProfile((prev) => ({
+            ...prev,
+            ...data,
+          }));
+        }
+        setHasLoadedFromDb(true);
+      },
+      (err) => {
+        console.warn("Could not load merchant profile from Firestore:", err);
+        setHasLoadedFromDb(true);
+      }
+    );
+    return () => unsub();
+  }, []);
+
+  const handleCopy = (text: string, fieldKey: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedField(fieldKey);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
+
+  const handleRegenerateApiKey = () => {
+    const randomHex = Array.from({ length: 16 }, () =>
+      Math.floor(Math.random() * 16).toString(16)
+    ).join("");
+    const newKey = `sp_live_ag_${randomHex}`;
+    setProfile((prev) => ({ ...prev, agentApiKey: newKey }));
+  };
+
+  const handleSave = async (e?: FormEvent) => {
+    if (e) e.preventDefault();
+    setIsSaving(true);
+    try {
+      const profileRef = doc(db, "merchants", "demo_merchant", "profile", "current");
+      await setDoc(profileRef, {
+        ...profile,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+
+      // Update global merchant email in store
+      if (profile.contactEmail && profile.contactEmail !== merchantEmail) {
+        setMerchantEmail(profile.contactEmail);
+      }
+
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3500);
+    } catch (err) {
+      console.error("Failed to save merchant profile:", err);
+      alert("Failed to save profile. Please check console.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const webhookEndpoint = typeof window !== "undefined"
+    ? `${window.location.origin}/api/razorpay-webhook`
+    : "http://localhost:8080/api/razorpay-webhook";
+
+  const purchaseApiEndpoint = typeof window !== "undefined"
+    ? `${window.location.origin}/api/purchase`
+    : "http://localhost:8080/api/purchase";
+
+  return (
+    <div className="space-y-8 pb-16">
+      {/* Top Banner & Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-border bg-gradient-to-r from-card via-card to-brand-blue/5 p-6 shadow-sm">
+        <div className="flex items-center gap-4">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-brand-blue/15 border border-brand-blue/25 text-xl font-bold text-brand-navy shadow-inner">
+            {profile.businessName
+              .split(" ")
+              .slice(0, 2)
+              .map((w) => w[0])
+              .join("")
+              .toUpperCase() || "SP"}
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold tracking-tight text-foreground">{profile.businessName}</h2>
+              <span className="inline-flex items-center gap-1 rounded-full bg-success/15 border border-success/30 px-2.5 py-0.5 text-[11px] font-semibold text-success">
+                <CheckCircle2 className="h-3 w-3" /> Verified Merchant
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Merchant ID: <span className="font-mono font-medium text-foreground">demo_merchant</span> · Razorpay Gateway v2.4 · SentryPay Guard Active
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setProfile(DEFAULT_PROFILE)}
+            className="rounded-lg border border-border bg-card px-3.5 py-2 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition"
+          >
+            Reset Defaults
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSave()}
+            disabled={isSaving}
+            className={cn(
+              "flex items-center gap-2 rounded-lg px-5 py-2 text-xs font-semibold text-white shadow transition",
+              saveSuccess
+                ? "bg-success hover:bg-success/90"
+                : "bg-brand-blue hover:bg-brand-blue/90"
+            )}
+          >
+            {isSaving ? (
+              <>
+                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                Saving...
+              </>
+            ) : saveSuccess ? (
+              <>
+                <Check className="h-3.5 w-3.5" />
+                Saved to Cloud!
+              </>
+            ) : (
+              <>
+                <Save className="h-3.5 w-3.5" />
+                Save Changes
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Save Toast Notification */}
+      {saveSuccess && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          className="flex items-center justify-between rounded-xl border border-success/30 bg-success/10 px-4 py-3 text-xs font-medium text-success shadow-sm"
+        >
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            <span>Merchant details, Razorpay credentials, and agent gateway settings have been successfully updated in Firestore!</span>
+          </div>
+          <button onClick={() => setSaveSuccess(false)} className="text-success/70 hover:text-success">
+            <X className="h-4 w-4" />
+          </button>
+        </motion.div>
+      )}
+
+      <form onSubmit={handleSave} className="space-y-8">
+        {/* Section 1: Business Profile & Identity */}
+        <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+          <div className="flex items-center gap-3 border-b border-border pb-4">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-blue/10 text-brand-navy">
+              <Building2 className="h-4 w-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">Business Profile & Contact Information</h3>
+              <p className="text-xs text-muted-foreground">General merchant entity details used for invoicing, notifications, and agent interactions</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Business Name</label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={profile.businessName}
+                  onChange={(e) => setProfile({ ...profile, businessName: e.target.value })}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs text-foreground focus:border-brand-blue focus:outline-none focus:ring-1 focus:ring-brand-blue"
+                  placeholder="e.g. SentryPay Retail Store"
+                  required
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Billing & Contact Email</label>
+              <div className="relative">
+                <input
+                  type="email"
+                  value={profile.contactEmail}
+                  onChange={(e) => setProfile({ ...profile, contactEmail: e.target.value })}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs text-foreground focus:border-brand-blue focus:outline-none focus:ring-1 focus:ring-brand-blue"
+                  placeholder="merchant@example.com"
+                  required
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Support Phone</label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={profile.contactPhone}
+                  onChange={(e) => setProfile({ ...profile, contactPhone: e.target.value })}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs text-foreground focus:border-brand-blue focus:outline-none focus:ring-1 focus:ring-brand-blue"
+                  placeholder="+91 98765 43210"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Business Category</label>
+              <select
+                value={profile.businessCategory}
+                onChange={(e) => setProfile({ ...profile, businessCategory: e.target.value })}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs text-foreground focus:border-brand-blue focus:outline-none focus:ring-1 focus:ring-brand-blue"
+              >
+                <option value="E-Commerce & Digital Retail">E-Commerce & Digital Retail</option>
+                <option value="SaaS & Cloud Services">SaaS & Cloud Services</option>
+                <option value="Electronics & Hardware">Electronics & Hardware</option>
+                <option value="Fashion & Apparel">Fashion & Apparel</option>
+                <option value="Groceries & Essentials">Groceries & Essentials</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">GSTIN / Tax ID</label>
+              <input
+                type="text"
+                value={profile.gstin}
+                onChange={(e) => setProfile({ ...profile, gstin: e.target.value })}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs font-mono text-foreground focus:border-brand-blue focus:outline-none focus:ring-1 focus:ring-brand-blue"
+                placeholder="29AAAAA0000A1Z5"
+              />
+            </div>
+
+            <div className="sm:col-span-2 lg:col-span-3">
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Registered Office Address</label>
+              <textarea
+                rows={2}
+                value={profile.address}
+                onChange={(e) => setProfile({ ...profile, address: e.target.value })}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs text-foreground focus:border-brand-blue focus:outline-none focus:ring-1 focus:ring-brand-blue"
+                placeholder="Office or warehouse location..."
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Section 2: Razorpay Gateway Credentials & Settlement */}
+        <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+          <div className="flex items-center justify-between border-b border-border pb-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-blue/10 text-brand-navy">
+                <CreditCard className="h-4 w-4" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">Razorpay Gateway Integration</h3>
+                <p className="text-xs text-muted-foreground">Configure your Razorpay Standard / Orders API keys, auto-capture rules, and webhook secrets</p>
+              </div>
+            </div>
+
+            {/* Mode Switcher */}
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-background p-1 text-xs">
+              <button
+                type="button"
+                onClick={() => setProfile({ ...profile, gatewayMode: "test" })}
+                className={cn(
+                  "rounded-md px-3 py-1 font-semibold transition",
+                  profile.gatewayMode === "test"
+                    ? "bg-warning text-brand-navy shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Sandbox / Test
+              </button>
+              <button
+                type="button"
+                onClick={() => setProfile({ ...profile, gatewayMode: "live" })}
+                className={cn(
+                  "rounded-md px-3 py-1 font-semibold transition",
+                  profile.gatewayMode === "live"
+                    ? "bg-success text-white shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Live Production
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2">
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Razorpay Key ID</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={profile.razorpayKeyId}
+                  onChange={(e) => setProfile({ ...profile, razorpayKeyId: e.target.value })}
+                  className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-xs font-mono text-foreground focus:border-brand-blue focus:outline-none focus:ring-1 focus:ring-brand-blue"
+                  placeholder="rzp_test_..."
+                />
+                <button
+                  type="button"
+                  onClick={() => handleCopy(profile.razorpayKeyId, "keyId")}
+                  className="rounded-lg border border-border bg-card px-3 py-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition"
+                  title="Copy Key ID"
+                >
+                  {copiedField === "keyId" ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Razorpay Key Secret</label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type={showSecret ? "text" : "password"}
+                    value={profile.razorpayKeySecret}
+                    onChange={(e) => setProfile({ ...profile, razorpayKeySecret: e.target.value })}
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 pr-9 text-xs font-mono text-foreground focus:border-brand-blue focus:outline-none focus:ring-1 focus:ring-brand-blue"
+                    placeholder="s3cr3t_..."
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowSecret(!showSecret)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showSecret ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleCopy(profile.razorpayKeySecret, "secret")}
+                  className="rounded-lg border border-border bg-card px-3 py-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition"
+                  title="Copy Secret"
+                >
+                  {copiedField === "secret" ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Webhook Endpoint URL</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={webhookEndpoint}
+                  className="flex-1 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs font-mono text-muted-foreground select-all"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleCopy(webhookEndpoint, "webhook")}
+                  className="rounded-lg border border-border bg-card px-3 py-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition"
+                  title="Copy Webhook Endpoint"
+                >
+                  {copiedField === "webhook" ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Webhook Secret (HMAC-SHA256)</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={profile.webhookSecret}
+                  onChange={(e) => setProfile({ ...profile, webhookSecret: e.target.value })}
+                  className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-xs font-mono text-foreground focus:border-brand-blue focus:outline-none focus:ring-1 focus:ring-brand-blue"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleCopy(profile.webhookSecret, "webhookSecret")}
+                  className="rounded-lg border border-border bg-card px-3 py-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition"
+                  title="Copy Webhook Secret"
+                >
+                  {copiedField === "webhookSecret" ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div className="sm:col-span-2 pt-2 border-t border-border">
+              <label className="flex items-center gap-3 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={profile.autoCapture}
+                  onChange={(e) => setProfile({ ...profile, autoCapture: e.target.checked })}
+                  className="h-4 w-4 rounded border-border text-brand-blue focus:ring-brand-blue"
+                />
+                <div>
+                  <span className="text-xs font-semibold text-foreground">Automatic Payment Capture</span>
+                  <p className="text-[11px] text-muted-foreground">
+                    Immediately capture funds on approved agent purchase orders without manual authorization settlement.
+                  </p>
+                </div>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 3: AI Agent Gateway & Policy API */}
+        <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+          <div className="flex items-center gap-3 border-b border-border pb-4">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-blue/10 text-brand-navy">
+              <Bot className="h-4 w-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">AI Agent Gateway & Autonomous Buyer Settings</h3>
+              <p className="text-xs text-muted-foreground">Endpoint controls, agent authorization keys, and initial trust thresholds for AI buyers</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2">
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Agent Purchase API Endpoint</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={purchaseApiEndpoint}
+                  className="flex-1 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs font-mono text-muted-foreground select-all"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleCopy(purchaseApiEndpoint, "apiEndpoint")}
+                  className="rounded-lg border border-border bg-card px-3 py-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition"
+                  title="Copy Endpoint"
+                >
+                  {copiedField === "apiEndpoint" ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Merchant Agent API Key</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={profile.agentApiKey}
+                  readOnly
+                  className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-xs font-mono text-foreground"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleCopy(profile.agentApiKey, "agentKey")}
+                  className="rounded-lg border border-border bg-card px-3 py-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition"
+                  title="Copy API Key"
+                >
+                  {copiedField === "agentKey" ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRegenerateApiKey}
+                  className="rounded-lg border border-border bg-card px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition"
+                  title="Regenerate Key"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Default Agent Trust Score</label>
+                <span className="text-xs font-semibold text-brand-navy">{profile.defaultTrustScore} / 100</span>
+              </div>
+              <input
+                type="range"
+                min={50}
+                max={100}
+                step={1}
+                value={profile.defaultTrustScore}
+                onChange={(e) => setProfile({ ...profile, defaultTrustScore: Number(e.target.value) })}
+                className="w-full accent-brand-blue cursor-pointer"
+              />
+              <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
+                <span>50 (Cautious / Frequent Escalation)</span>
+                <span>85 (Recommended)</span>
+                <span>100 (Unrestricted)</span>
+              </div>
+            </div>
+
+            <div className="flex flex-col justify-center">
+              <label className="flex items-center gap-3 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={profile.strictAgentAuth}
+                  onChange={(e) => setProfile({ ...profile, strictAgentAuth: e.target.checked })}
+                  className="h-4 w-4 rounded border-border text-brand-blue focus:ring-brand-blue"
+                />
+                <div>
+                  <span className="text-xs font-semibold text-foreground">Strict Signature Verification</span>
+                  <p className="text-[11px] text-muted-foreground">
+                    Enforce X-SentryPay-Signature on all incoming automated purchasing payload deliveries.
+                  </p>
+                </div>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 4: Automated Alerts & Notifications */}
+        <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+          <div className="flex items-center gap-3 border-b border-border pb-4">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-blue/10 text-brand-navy">
+              <Bell className="h-4 w-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">Notifications & Security Alerts</h3>
+              <p className="text-xs text-muted-foreground">Choose when you want live notifications or merchant dashboard alerts triggered</p>
+            </div>
+          </div>
+
+          <div className="mt-5 space-y-4">
+            <label className="flex items-start gap-3 cursor-pointer select-none p-3 rounded-lg border border-border hover:bg-muted/30 transition">
+              <input
+                type="checkbox"
+                checked={profile.alertOnEscalation}
+                onChange={(e) => setProfile({ ...profile, alertOnEscalation: e.target.checked })}
+                className="mt-0.5 h-4 w-4 rounded border-border text-brand-blue focus:ring-brand-blue"
+              />
+              <div>
+                <span className="text-xs font-semibold text-foreground">Pending Approval Escalation Alerts</span>
+                <p className="text-[11px] text-muted-foreground">
+                  Receive instant notifications when an AI agent purchase exceeds rules and enters the Approval Queue.
+                </p>
+              </div>
+            </label>
+
+            <label className="flex items-start gap-3 cursor-pointer select-none p-3 rounded-lg border border-border hover:bg-muted/30 transition">
+              <input
+                type="checkbox"
+                checked={profile.alertOnSpendCap}
+                onChange={(e) => setProfile({ ...profile, alertOnSpendCap: e.target.checked })}
+                className="mt-0.5 h-4 w-4 rounded border-border text-brand-blue focus:ring-brand-blue"
+              />
+              <div>
+                <span className="text-xs font-semibold text-foreground">80% Daily Spend Budget Warning</span>
+                <p className="text-[11px] text-muted-foreground">
+                  Send a priority alert when total approved agent purchases today approach the daily limit (Current cap: ₹{rules.dailyLimit.toLocaleString("en-IN")}).
+                </p>
+              </div>
+            </label>
+
+            <label className="flex items-start gap-3 cursor-pointer select-none p-3 rounded-lg border border-border hover:bg-muted/30 transition">
+              <input
+                type="checkbox"
+                checked={profile.alertOnAuditTamper}
+                onChange={(e) => setProfile({ ...profile, alertOnAuditTamper: e.target.checked })}
+                className="mt-0.5 h-4 w-4 rounded border-border text-brand-blue focus:ring-brand-blue"
+              />
+              <div>
+                <span className="text-xs font-semibold text-foreground">Verdict Chain Cryptographic Tamper Warning</span>
+                <p className="text-[11px] text-muted-foreground">
+                  Immediately flag any transaction block whose SHA-256 hash does not match previous link integrity.
+                </p>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        {/* Bottom Save Bar */}
+        <div className="flex items-center justify-end gap-3 pt-4">
+          <button
+            type="submit"
+            disabled={isSaving}
+            className="flex items-center gap-2 rounded-lg bg-brand-blue px-6 py-2.5 text-xs font-semibold text-white shadow-md hover:bg-brand-blue/90 transition disabled:opacity-50"
+          >
+            {isSaving ? (
+              <>
+                <RefreshCw className="h-4 w-4 animate-spin" />
+                Saving Changes...
+              </>
+            ) : (
+              <>
+                <Save className="h-4 w-4" />
+                Save Profile & Settings
+              </>
+            )}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

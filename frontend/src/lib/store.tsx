@@ -44,6 +44,7 @@ export interface SubmitResult {
 export interface FirewallStore {
   isLoggedIn: boolean;
   merchantEmail: string | null;
+  setMerchantEmail: (email: string) => void;
   login: (email: string) => void;
   logout: () => void;
 
@@ -371,6 +372,7 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
   const value: FirewallStore = {
     isLoggedIn,
     merchantEmail,
+    setMerchantEmail,
     login,
     logout,
     rules,
