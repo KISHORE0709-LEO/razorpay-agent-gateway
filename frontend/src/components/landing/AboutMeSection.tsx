@@ -61,7 +61,7 @@ export function AboutMeSection() {
               <Github className="h-5 w-5" />
             </a>
             <a
-              href="https://linkedin.com"
+              href="https://www.linkedin.com/in/m-kishore-417b8b193/"
               target="_blank"
               rel="noopener noreferrer"
               aria-label="LinkedIn"
@@ -70,7 +70,7 @@ export function AboutMeSection() {
               <Linkedin className="h-5 w-5" />
             </a>
             <a
-              href="https://github.com/KISHORE0709-LEO/razorpay-agent-gateway"
+              href="https://m-kishore-07.vercel.app/"
               target="_blank"
               rel="noopener noreferrer"
               aria-label="Website"
@@ -79,7 +79,7 @@ export function AboutMeSection() {
               <Globe className="h-5 w-5" />
             </a>
             <a
-              href="https://twitter.com"
+              href="https://x.com/kishore_0709"
               target="_blank"
               rel="noopener noreferrer"
               aria-label="Twitter"
@@ -88,7 +88,7 @@ export function AboutMeSection() {
               <Twitter className="h-5 w-5" />
             </a>
             <a
-              href="mailto:kishore@example.com"
+              href="kishoremurali0726@gmail.com"
               aria-label="Email"
               className="flex h-11 w-11 items-center justify-center rounded-2xl border border-[#2dd4bf]/30 bg-[#2dd4bf]/10 text-[#2dd4bf] transition-all duration-200 hover:bg-[#2dd4bf]/25 hover:border-[#2dd4bf] hover:scale-110 shadow-xs"
             >
