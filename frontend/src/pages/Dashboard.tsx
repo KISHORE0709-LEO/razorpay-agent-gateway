@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
   AlertTriangle,
+  ArrowUp,
   ArrowUpRight,
   Ban,
   Bot,
@@ -29,8 +30,11 @@ import {
   Search,
   Settings2,
   ShieldCheck,
+  Sparkles,
   Trash2,
+  User,
   X,
+  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CATEGORIES } from "@/lib/catalog";
@@ -48,9 +52,9 @@ import {
 
 const NAV = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
-  { id: "chat", label: "AI Buyer", icon: Bot },
   { id: "rules", label: "Firewall Rules", icon: Settings2 },
   { id: "catalog", label: "Catalog", icon: Package },
+  { id: "chat", label: "AI Buyer", icon: Bot },
   { id: "approvals", label: "Approval Queue", icon: Clock3 },
   { id: "audit", label: "Audit Trail", icon: Activity },
 ] as const;
@@ -99,7 +103,7 @@ export default function Dashboard() {
       </aside>
       <div className={cn("min-w-0 flex-1 transition-[padding] duration-300 ease-out", sidebarOpen ? "pl-72" : "pl-0")}>
         <header className="flex h-20 items-center justify-between border-b border-border bg-card px-5 sm:px-8">
-          <div className="flex items-center gap-3"><div className="flex items-center gap-1"><button onClick={() => setSidebarOpen((open) => !open)} className="rounded-lg p-2 text-muted-foreground transition hover:bg-muted hover:text-brand-navy" title={sidebarOpen ? "Close sidebar" : "Open sidebar"}><Menu className="h-4 w-4" /></button></div><div><div className="text-xs text-muted-foreground">Merchant workspace /</div><h1 className="text-lg font-semibold capitalize">{tab === "chat" ? "AI Buyer" : tab === "rules" ? "Firewall Rules" : tab === "catalog" ? "Product Catalog" : tab === "audit" ? "Audit Trail" : tab === "approvals" ? "Approval Queue" : "Overview"}</h1></div></div>
+          <div className="flex items-center gap-3"><div className="flex items-center gap-1"><button onClick={() => setSidebarOpen((open) => !open)} className="rounded-lg p-2 text-muted-foreground transition hover:bg-muted hover:text-brand-navy" title={sidebarOpen ? "Close sidebar" : "Open sidebar"}><Menu className="h-4 w-4" /></button></div><div><h1 className="text-lg font-semibold capitalize">{tab === "chat" ? "AI Buyer" : tab === "rules" ? "Firewall Rules" : tab === "catalog" ? "Product Catalog" : tab === "audit" ? "Audit Trail" : tab === "approvals" ? "Approval Queue" : "Overview"}</h1></div></div>
           <div className="flex items-center gap-3"><div className="hidden items-center gap-2 rounded-full border border-success/20 bg-success/10 px-3 py-1.5 text-xs font-medium text-success sm:flex"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-success" />System operational</div><div className="h-8 w-8 rounded-full bg-brand-blue/10 text-center text-xs leading-8 font-semibold text-brand-navy">{merchantEmail?.[0]?.toUpperCase() ?? "M"}</div></div>
         </header>
         <main className="mx-auto max-w-[1500px] p-5 sm:p-8">
@@ -1138,6 +1142,41 @@ function formatOrderTime(isoString?: string) {
   }
 }
 
+const PROMPT_SUGGESTIONS = [
+  {
+    icon: "🎧",
+    label: "Earbuds < ₹2,000",
+    query: "Buy wireless earbuds under 2000",
+    description: "In-policy auto-purchase via Razorpay Orders API",
+    badge: "Auto Approved",
+    badgeClass: "text-emerald-700 bg-emerald-50 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800",
+  },
+  {
+    icon: "👟",
+    label: "Nike Shoes ₹8,000",
+    query: "Buy running shoes for 8000",
+    description: "Exceeds item limit, tests in-policy recovery offer",
+    badge: "Recovery Offer",
+    badgeClass: "text-brand-blue bg-brand-blue/10 border-brand-blue/20",
+  },
+  {
+    icon: "📱",
+    label: "Apple iPad ₹55,000",
+    query: "Buy Apple iPad Air for 55000",
+    description: "High-value spend, tests human approval queue",
+    badge: "Escalation",
+    badgeClass: "text-amber-700 bg-amber-50 border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800",
+  },
+  {
+    icon: "⌚",
+    label: "Smartwatch < ₹3,500",
+    query: "Buy smartwatch under 3500",
+    description: "Evaluates velocity limits and merchant budget",
+    badge: "In Catalog",
+    badgeClass: "text-indigo-700 bg-indigo-50 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-400 dark:border-indigo-800",
+  },
+];
+
 function BuyerChat() {
   const { sendChatRequest, submitRequest } = useFirewall();
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -1148,6 +1187,7 @@ function BuyerChat() {
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Subscribe to real-time chat sessions from Firestore / backend
   useEffect(() => {
@@ -1262,10 +1302,24 @@ function BuyerChat() {
     });
   }
 
-  async function send(event: FormEvent) {
-    event.preventDefault();
-    if (!text.trim() || loading) return;
-    const request = text.trim();
+  // Auto-resize input textarea
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.style.height = "auto";
+      inputRef.current.style.height = `${Math.min(Math.max(inputRef.current.scrollHeight, 44), 130)}px`;
+    }
+  }, [text]);
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendPrompt();
+    }
+  }
+
+  async function sendPrompt(customText?: string) {
+    const request = (typeof customText === "string" ? customText : text).trim();
+    if (!request || loading) return;
 
     // Ensure we have a session
     let targetSession = activeSession;
@@ -1298,6 +1352,9 @@ function BuyerChat() {
       return exists ? prev.map((s) => (s.id === sessionWithUser.id ? sessionWithUser : s)) : [sessionWithUser, ...prev];
     });
     setText("");
+    if (inputRef.current) {
+      inputRef.current.style.height = "auto";
+    }
     setLoading(true);
 
     try {
@@ -1404,16 +1461,29 @@ function BuyerChat() {
     persistSession("demo_merchant", updatedSession);
   }
 
+  const hasUserMessages = messages.some((m) => m.role === "user");
+
   return (
     <div className="mx-auto max-w-6xl space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm text-muted-foreground">Simulate an autonomous purchase with natural language</p>
-          <h2 className="mt-1 text-2xl font-bold tracking-tight text-brand-navy">AI Buyer</h2>
+          <div className="flex items-center gap-2">
+            <span className="flex h-2 w-2 rounded-full bg-success animate-pulse" />
+            <span className="text-[11px] font-semibold tracking-wider uppercase text-brand-blue">
+              Autonomous Purchasing Simulation
+            </span>
+          </div>
+          <h2 className="mt-0.5 text-2xl font-bold tracking-tight text-brand-navy">AI Buyer</h2>
+        </div>
+        <div className="hidden sm:flex items-center gap-2">
+          <div className="flex items-center gap-1.5 rounded-full border border-border/80 bg-card px-3 py-1 text-xs text-muted-foreground shadow-2xs">
+            <ShieldCheck className="h-3.5 w-3.5 text-brand-blue" />
+            <span>SentryPay Firewall Protected</span>
+          </div>
         </div>
       </div>
 
-      <div className="flex h-[720px] overflow-hidden rounded-2xl border border-brand-blue/20 bg-card shadow-sm">
+      <div className="flex h-[740px] overflow-hidden rounded-2xl border border-border/80 bg-card shadow-sm">
         {/* Chat Sessions Left Sidebar */}
         <div
           className={cn(
@@ -1431,7 +1501,7 @@ function BuyerChat() {
             </div>
             <button
               onClick={handleNewChat}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-brand-blue/10 px-2.5 py-1.5 text-xs font-semibold text-brand-blue transition hover:bg-brand-blue hover:text-white"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-brand-blue/10 px-2.5 py-1.5 text-xs font-semibold text-brand-blue transition hover:bg-brand-blue hover:text-white cursor-pointer"
               title="Start a new chat session"
             >
               <Plus className="h-3.5 w-3.5" />
@@ -1475,7 +1545,7 @@ function BuyerChat() {
                     <button
                       onClick={(e) => handleDeleteSession(s.id, e)}
                       title="Delete session"
-                      className="absolute right-2.5 bottom-2.5 opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-destructive transition rounded-md hover:bg-background/80"
+                      className="absolute right-2.5 bottom-2.5 opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-destructive transition rounded-md hover:bg-background/80 cursor-pointer"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
@@ -1489,25 +1559,25 @@ function BuyerChat() {
         {/* Main Chat Conversation Area */}
         <div className="flex flex-1 flex-col min-w-0 bg-card">
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
+          <div className="flex items-center justify-between border-b border-border px-4 sm:px-5 py-3">
             <div className="flex items-center gap-3 min-w-0">
               <button
                 onClick={() => setSidebarOpen((open) => !open)}
-                className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-brand-navy transition"
+                className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-brand-navy transition cursor-pointer"
                 title={sidebarOpen ? "Hide chat sessions" : "Show chat sessions"}
               >
                 {sidebarOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
               </button>
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-blue/10 text-brand-blue">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-blue/10 text-brand-blue shadow-2xs">
                 <Bot className="h-4 w-4" />
               </div>
               <div className="min-w-0">
                 <div className="truncate text-xs font-semibold text-brand-navy">
-                  {activeSession?.title || "SentryPay shopping agent"}
+                  {activeSession?.title || "SentryPay Shopping Agent"}
                 </div>
-                <div className="flex items-center gap-1 text-[10px] text-success">
+                <div className="flex items-center gap-1.5 text-[10px] text-success">
                   <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
-                  <span>Connected to Groq LLM & merchant catalog</span>
+                  <span>Groq Llama 3.3 • Live Catalog & Firewall Rules</span>
                 </div>
               </div>
             </div>
@@ -1515,7 +1585,7 @@ function BuyerChat() {
             <div className="flex items-center gap-2 shrink-0">
               <button
                 onClick={handleNewChat}
-                className="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-brand-navy hover:bg-muted transition"
+                className="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-brand-navy hover:bg-muted transition cursor-pointer"
               >
                 <Plus className="h-3.5 w-3.5" />
                 <span>New chat</span>
@@ -1527,58 +1597,241 @@ function BuyerChat() {
           </div>
 
           {/* Messages Feed */}
-          <div className="flex-1 overflow-y-auto space-y-4 bg-background/50 p-5 sm:p-6">
+          <div className="flex-1 overflow-y-auto space-y-4 bg-background/50 p-4 sm:p-6">
+            {/* Show rich starter hero if session is fresh / no user messages yet */}
+            {!hasUserMessages && (
+              <div className="my-auto py-6 px-2 text-center max-w-2xl mx-auto space-y-5">
+                <div className="relative inline-flex items-center justify-center">
+                  <div className="absolute -inset-2 rounded-2xl bg-gradient-to-r from-brand-blue via-blue-500 to-indigo-500 opacity-20 blur-md animate-pulse" />
+                  <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-tr from-brand-blue to-blue-600 text-white shadow-md shadow-brand-blue/25">
+                    <Bot className="h-7 w-7" />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="inline-flex items-center gap-1.5 rounded-full border border-brand-blue/20 bg-brand-blue/10 px-3 py-1 text-xs font-semibold text-brand-blue">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    <span>Autonomous Shopping Assistant</span>
+                  </div>
+                  <h3 className="text-xl sm:text-2xl font-bold tracking-tight text-brand-navy">
+                    What would you like to purchase today?
+                  </h3>
+                  <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed max-w-lg mx-auto">
+                    Type any purchase request in natural language. The agent extracts intent, searches the merchant catalog, and evaluates transaction limits before calling the Razorpay Orders API.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-left pt-2">
+                  {PROMPT_SUGGESTIONS.map((item, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      disabled={loading}
+                      onClick={() => {
+                        setText(item.query);
+                        inputRef.current?.focus();
+                      }}
+                      className="group relative flex flex-col justify-between rounded-xl border border-border/80 bg-card p-3 shadow-2xs transition-all duration-200 hover:-translate-y-0.5 hover:border-brand-blue/60 hover:bg-brand-blue/[0.02] hover:shadow-md hover:shadow-brand-blue/5 text-left cursor-pointer"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-lg">{item.icon}</span>
+                        <span className={cn("rounded-full border px-2 py-0.5 text-[9px] font-semibold tracking-wide uppercase", item.badgeClass)}>
+                          {item.badge}
+                        </span>
+                      </div>
+                      <div className="mt-2">
+                        <div className="text-xs font-semibold text-brand-navy group-hover:text-brand-blue transition">
+                          "{item.query}"
+                        </div>
+                        <div className="mt-0.5 text-[11px] text-muted-foreground leading-tight">
+                          {item.description}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Messages Thread */}
             {messages.map((message) => {
               const isUser = message.role === "user";
               return (
-                <div key={message.id} className={cn("flex gap-3", isUser && "justify-end")}>
-                  <div
-                    className={cn(
-                      "max-w-[88%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-2xs",
-                      isUser
-                        ? "rounded-br-md bg-brand-blue text-white"
-                        : "rounded-bl-md border border-border bg-card text-brand-navy"
-                    )}
-                  >
-                    <p>{message.content}</p>
-                    {message.result && (
-                      <DecisionCard
-                        result={message.result}
-                        onAccept={() => acceptAlternative(message.result!)}
-                        onDecline={declineAlternative}
-                        onSelectSuggestion={(query) => setText(query)}
-                      />
-                    )}
-                  </div>
+                <div key={message.id} className={cn("flex gap-3", isUser ? "justify-end" : "justify-start")}>
+                  {/* Agent message layout */}
+                  {!isUser && (
+                    <div className="flex items-start gap-3 w-full max-w-[92%] sm:max-w-[85%]">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-blue/15 to-blue-500/10 border border-brand-blue/25 text-brand-blue shadow-2xs mt-0.5">
+                        <Bot className="h-4 w-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1 px-1">
+                          <span className="text-xs font-semibold text-brand-navy">AI Buyer</span>
+                          <span className="inline-flex items-center gap-1 rounded-full bg-brand-blue/10 px-1.5 py-0.2 text-[9px] font-semibold text-brand-blue">
+                            Groq Llama 3
+                          </span>
+                          <span className="font-mono text-[10px] text-muted-foreground/60 ml-auto">
+                            {formatOrderTime(message.timestamp)}
+                          </span>
+                        </div>
+                        <div className="rounded-2xl rounded-tl-xs border border-border/80 bg-card p-4 text-sm leading-relaxed text-brand-navy shadow-2xs">
+                          <p className="whitespace-pre-wrap">{message.content}</p>
+                          {message.result && (
+                            <DecisionCard
+                              result={message.result}
+                              onAccept={() => acceptAlternative(message.result!)}
+                              onDecline={declineAlternative}
+                              onSelectSuggestion={(query) => {
+                                setText(query);
+                                inputRef.current?.focus();
+                              }}
+                            />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* User message layout */}
+                  {isUser && (
+                    <div className="flex items-start gap-2.5 max-w-[85%] sm:max-w-[75%]">
+                      <div className="flex flex-col items-end">
+                        <div className="rounded-2xl rounded-tr-xs bg-gradient-to-r from-brand-blue via-blue-600 to-indigo-600 px-4 py-3 text-sm text-white shadow-md shadow-brand-blue/20 leading-relaxed">
+                          <p className="whitespace-pre-wrap">{message.content}</p>
+                        </div>
+                        <span className="mt-1 px-1 font-mono text-[10px] text-muted-foreground/70">
+                          {formatOrderTime(message.timestamp)}
+                        </span>
+                      </div>
+                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-navy text-white text-[11px] font-semibold mt-0.5 shadow-2xs">
+                        <User className="h-3.5 w-3.5" />
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
+
+            {/* Thinking / Evaluating State */}
             {loading && (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground italic">
-                <RefreshCw className="h-3.5 w-3.5 animate-spin text-brand-blue" />
-                AI Agent is parsing catalog and evaluating firewall rules...
+              <div className="flex items-start gap-3 max-w-[85%]">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-brand-blue/10 text-brand-blue shadow-2xs animate-pulse">
+                  <Bot className="h-4 w-4" />
+                </div>
+                <div className="rounded-2xl rounded-tl-xs border border-brand-blue/25 bg-card p-3.5 shadow-2xs space-y-2">
+                  <div className="flex items-center gap-2 text-xs font-medium text-brand-navy">
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin text-brand-blue" />
+                    <span>Evaluating purchase request with Groq LLM...</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="flex gap-1">
+                      <span className="h-1.5 w-1.5 rounded-full bg-brand-blue animate-bounce" style={{ animationDelay: "0ms" }} />
+                      <span className="h-1.5 w-1.5 rounded-full bg-brand-blue animate-bounce" style={{ animationDelay: "150ms" }} />
+                      <span className="h-1.5 w-1.5 rounded-full bg-brand-blue animate-bounce" style={{ animationDelay: "300ms" }} />
+                    </span>
+                    <span className="text-[11px] text-muted-foreground font-mono">
+                      Checking catalog, velocity rules & price limit thresholds
+                    </span>
+                  </div>
+                </div>
               </div>
             )}
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Prompt input */}
-          <form onSubmit={send} className="flex gap-2 border-t border-border bg-card p-4">
-            <input
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="Try: 'Buy wireless earbuds under 2000' or 'Buy running shoes for 8000'"
-              className="h-11 min-w-0 flex-1 rounded-xl border border-border bg-background px-4 text-sm outline-none focus:border-brand-blue"
-            />
-            <button
-              type="submit"
-              disabled={loading}
-              className="flex h-11 shrink-0 items-center gap-2 rounded-xl bg-brand-blue px-4 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
+          {/* Quick Prompt Suggestions Bar */}
+          <div className="flex items-center gap-1.5 overflow-x-auto border-t border-border/40 bg-muted/15 px-4 py-2 scrollbar-none">
+            <span className="shrink-0 flex items-center gap-1 text-[11px] font-semibold text-muted-foreground mr-1">
+              <Sparkles className="h-3 w-3 text-brand-blue" /> Quick test:
+            </span>
+            {PROMPT_SUGGESTIONS.map((item, idx) => (
+              <button
+                key={idx}
+                type="button"
+                disabled={loading}
+                onClick={() => {
+                  setText(item.query);
+                  inputRef.current?.focus();
+                }}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border/70 bg-card px-2.5 py-1 text-xs text-brand-navy font-medium shadow-2xs transition hover:border-brand-blue hover:bg-brand-blue/5 hover:text-brand-blue disabled:opacity-50 cursor-pointer"
+              >
+                <span>{item.icon}</span>
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Redesigned Studio Chatbox Input */}
+          <div className="border-t border-border/60 bg-card/80 p-3.5 sm:p-4 backdrop-blur-md">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                sendPrompt();
+              }}
+              className="relative"
             >
-              <span className="hidden sm:inline">Send request</span>
-              <ArrowUpRight className="h-4 w-4" />
-            </button>
-          </form>
+              <div className="relative rounded-2xl border border-border/80 bg-background/90 shadow-sm transition-all duration-200 focus-within:border-brand-blue/60 focus-within:ring-4 focus-within:ring-brand-blue/10 focus-within:shadow-md">
+                <textarea
+                  ref={inputRef}
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  rows={1}
+                  placeholder="Ask AI Buyer to purchase anything (e.g. 'Buy wireless earbuds under 2000')..."
+                  className="min-h-[44px] max-h-[140px] w-full resize-none bg-transparent px-4 pt-3 pb-2 text-sm text-foreground placeholder:text-muted-foreground/60 outline-none leading-relaxed"
+                />
+
+                <div className="flex items-center justify-between px-3 pb-2.5 pt-1 border-t border-border/30">
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 rounded-full bg-brand-blue/10 px-2.5 py-0.5 text-[10px] font-semibold text-brand-blue">
+                      <Zap className="h-3 w-3" />
+                      <span>Autonomous Mode</span>
+                    </div>
+                    {text.trim().length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setText("");
+                          inputRef.current?.focus();
+                        }}
+                        className="text-[11px] text-muted-foreground hover:text-foreground transition px-1.5 py-0.5 rounded cursor-pointer"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <div className="hidden sm:flex items-center gap-1 text-[10px] text-muted-foreground font-mono">
+                      <span>Press</span>
+                      <kbd className="rounded border border-border bg-muted/70 px-1.5 py-0.5 text-[9px] font-mono shadow-2xs">Enter ↵</kbd>
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={!text.trim() || loading}
+                      className={cn(
+                        "flex h-8 items-center justify-center gap-1.5 rounded-xl px-3 text-xs font-semibold transition-all duration-150 shadow-xs",
+                        text.trim() && !loading
+                          ? "bg-gradient-to-r from-brand-blue to-blue-600 text-white hover:brightness-110 hover:shadow-md hover:shadow-brand-blue/25 active:scale-95 cursor-pointer"
+                          : "bg-muted text-muted-foreground/50 cursor-not-allowed opacity-60"
+                      )}
+                    >
+                      <span>Send request</span>
+                      <ArrowUp className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-2 flex items-center justify-between px-1 text-[11px] text-muted-foreground/70">
+                <div className="flex items-center gap-1.5">
+                  <ShieldCheck className="h-3.5 w-3.5 text-brand-blue" />
+                  <span>Razorpay Orders API • Real-time firewall policy verification</span>
+                </div>
+                <span className="hidden sm:inline font-mono text-[10px]">Groq Llama 3.3 70B</span>
+              </div>
+            </form>
+          </div>
         </div>
       </div>
     </div>
