@@ -210,11 +210,55 @@ export async function generateCampaignSuggestions(merchantId: string): Promise<C
     source: "orchestrator",
   });
 
-  // Save to Firestore
+  // Check for existing active OR recently-suggested (within the last 24h) campaigns with the same name/type
   const campaignsRef = collection(db, `merchants/${merchantId}/campaigns`);
+  const existingSnap = await getDocs(campaignsRef);
+
+  const now = Date.now();
+  const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
+  const existingActiveOrRecentTitles = new Set<string>();
+
+  existingSnap.forEach((docSnap) => {
+    const data = docSnap.data() as Campaign;
+    const title = (data.title || "").trim().toLowerCase();
+    if (!title) return;
+
+    // 1. Check if active (and not expired)
+    if (data.status === "active") {
+      if (data.expiresAt) {
+        const expTime = new Date(data.expiresAt).getTime();
+        if (now <= expTime) {
+          existingActiveOrRecentTitles.add(title);
+          return;
+        }
+      } else {
+        existingActiveOrRecentTitles.add(title);
+        return;
+      }
+    }
+
+    // 2. Check if suggested within the last 24h
+    if (data.status === "suggested") {
+      const createdTime = new Date(data.createdAt || 0).getTime();
+      if (createdTime >= twentyFourHoursAgo) {
+        existingActiveOrRecentTitles.add(title);
+      }
+    }
+  });
+
+  // Filter out any suggestions with the same name/type to prevent duplicates
+  const campaignsToCreate = suggestedCampaigns.filter((camp) => {
+    const normTitle = camp.title.trim().toLowerCase();
+    const isDuplicate = existingActiveOrRecentTitles.has(normTitle);
+    if (isDuplicate) {
+      console.log(`[Campaign Orchestrator] Skipping duplicate suggestion "${camp.title}" (already active or suggested within last 24h).`);
+    }
+    return !isDuplicate;
+  });
+
   const createdList: Campaign[] = [];
 
-  for (const camp of suggestedCampaigns) {
+  for (const camp of campaignsToCreate) {
     const docRef = await addDoc(campaignsRef, camp);
     createdList.push({ id: docRef.id, ...camp });
   }

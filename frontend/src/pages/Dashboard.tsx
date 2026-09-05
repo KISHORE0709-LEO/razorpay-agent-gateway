@@ -4109,8 +4109,19 @@ function CampaignsPanel() {
       });
       const data = await res.json();
       if (res.ok) {
-        setMessage({ text: `Orchestrator generated ${data.campaigns?.length || 0} smart campaigns based on 7-day transaction history & agent trust telemetry.`, type: "success" });
         if (data.campaigns) setCampaigns(data.campaigns);
+        const count = data.count !== undefined ? data.count : (data.suggestions?.length || 0);
+        if (count > 0) {
+          setMessage({
+            text: `Orchestrator generated ${count} new smart campaign${count === 1 ? "" : "s"} based on 7-day transaction history & agent trust telemetry.`,
+            type: "success",
+          });
+        } else {
+          setMessage({
+            text: `All campaign suggestions are already up to date. No duplicate suggestions created.`,
+            type: "success",
+          });
+        }
       } else {
         setMessage({ text: data.error || "Failed to generate suggestions", type: "error" });
       }
@@ -4133,6 +4144,7 @@ function CampaignsPanel() {
       const data = await res.json();
       if (res.ok) {
         setMessage({ text: "Campaign activated for 48 hours! Override is now active in firewall evaluation.", type: "success" });
+        await fetchCampaigns();
       } else {
         setMessage({ text: data.error || "Activation failed", type: "error" });
       }
@@ -4155,6 +4167,7 @@ function CampaignsPanel() {
       const data = await res.json();
       if (res.ok) {
         setMessage({ text: "Campaign deactivated.", type: "success" });
+        await fetchCampaigns();
       } else {
         setMessage({ text: data.error || "Deactivation failed", type: "error" });
       }
@@ -4163,9 +4176,22 @@ function CampaignsPanel() {
     }
   }
 
-  const activeCampaigns = campaigns.filter((c) => c.status === "active");
-  const suggestedCampaigns = campaigns.filter((c) => c.status === "suggested");
-  const expiredCampaigns = campaigns.filter((c) => c.status === "expired");
+  // Deduplicate by title so suggestions list never displays duplicates
+  const uniqueCampaigns = useMemo(() => {
+    const seen = new Set<string>();
+    const res: Campaign[] = [];
+    for (const c of campaigns) {
+      const key = (c.title || "").trim().toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      res.push(c);
+    }
+    return res;
+  }, [campaigns]);
+
+  const activeCampaigns = uniqueCampaigns.filter((c) => c.status === "active");
+  const suggestedCampaigns = uniqueCampaigns.filter((c) => c.status === "suggested");
+  const expiredCampaigns = uniqueCampaigns.filter((c) => c.status === "expired");
 
   return (
     <div className="space-y-7">

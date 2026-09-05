@@ -34,9 +34,19 @@ export const handleListCampaigns: RequestHandler = async (req, res): Promise<any
       return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
     });
 
+    // Deduplicate by normalized title: keep only the single highest-priority/most-recent instance of each campaign name
+    const seenTitles = new Set<string>();
+    const deduplicatedItems: Campaign[] = [];
+    for (const item of items) {
+      const normTitle = (item.title || "").trim().toLowerCase();
+      if (!normTitle || seenTitles.has(normTitle)) continue;
+      seenTitles.add(normTitle);
+      deduplicatedItems.push(item);
+    }
+
     return res.json({
       activeCampaign,
-      campaigns: items,
+      campaigns: deduplicatedItems,
     });
   } catch (error: any) {
     console.error("Error listing campaigns:", error);
@@ -48,7 +58,34 @@ export const handleGenerateCampaigns: RequestHandler = async (req, res): Promise
   try {
     const merchantId = req.body.merchantId || "demo_merchant";
     const suggestions = await generateCampaignSuggestions(merchantId);
-    return res.json({ success: true, count: suggestions.length, suggestions });
+
+    // Fetch updated list of campaigns
+    const campaignsRef = collection(db, `merchants/${merchantId}/campaigns`);
+    const snap = await getDocs(campaignsRef);
+    const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Campaign));
+
+    const statusOrder: Record<string, number> = { active: 0, suggested: 1, expired: 2 };
+    items.sort((a, b) => {
+      const orderDiff = (statusOrder[a.status] ?? 3) - (statusOrder[b.status] ?? 3);
+      if (orderDiff !== 0) return orderDiff;
+      return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+    });
+
+    const seenTitles = new Set<string>();
+    const deduplicatedItems: Campaign[] = [];
+    for (const item of items) {
+      const normTitle = (item.title || "").trim().toLowerCase();
+      if (!normTitle || seenTitles.has(normTitle)) continue;
+      seenTitles.add(normTitle);
+      deduplicatedItems.push(item);
+    }
+
+    return res.json({
+      success: true,
+      count: suggestions.length,
+      suggestions,
+      campaigns: deduplicatedItems,
+    });
   } catch (error: any) {
     console.error("Error generating campaigns:", error);
     return res.status(500).json({ error: error.message || "Internal server error" });
