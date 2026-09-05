@@ -7,10 +7,33 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Dependencies
 node_modules
+.pnpm-store
+
+# Build outputs
 dist
 dist-ssr
+build
 *.local
+
+# Environment variables and secrets (Protect all env files across root, backend, frontend, etc.)
+.env
+.env.*
+*.env
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
+# Secret keys, API keys, and credential exports
+*.csv
+*.key
+*.pem
+*.cert
+*.p12
+*.pfx
+rzp-key*.csv
 
 # Editor directories and files
 .vscode/*
@@ -23,5 +46,8 @@ dist-ssr
 *.sln
 *.sw?
 
+# Config & cache
 .config/
-!.env
+.cache/
+.temp/
+.tmp/
