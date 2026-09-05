@@ -5,7 +5,7 @@ import { handleDemo } from "./routes/demo";
 import { handleEvaluate } from "./routes/evaluate";
 import { handleChat } from "./routes/chat";
 import { handleResolve } from "./routes/resolve";
-import { handleGetRules, handleSaveRules } from "./routes/rules";
+import { handleGetRules, handleSaveRules, handleGetPolicyStrategies } from "./routes/rules";
 import { handleDeleteSession, handleGetSession, handleListSessions, handleSaveSession } from "./routes/sessions";
 import {
   handleListCampaigns,
@@ -35,6 +35,7 @@ app.post("/api/chat", handleChat);
 app.post("/api/resolve", handleResolve);
 app.get("/api/rules", handleGetRules);
 app.post("/api/rules", handleSaveRules);
+app.get("/api/rules/advisor", handleGetPolicyStrategies);
 
 // Chat session routes
 app.get("/api/chat/sessions", handleListSessions);

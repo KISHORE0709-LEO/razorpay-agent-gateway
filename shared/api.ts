@@ -42,6 +42,16 @@ export interface Campaign {
   activatedAt?: string;
 }
 
+export interface PolicyStrategy {
+  name: "Conservative" | "Balanced" | "Growth";
+  maxOrderAmount: number;
+  dailySpendLimit: number;
+  approvalThreshold: number;
+  maxDiscountPercent: number;
+  suggestedCategories: string[];
+  reasoning: string;
+}
+
 export interface OutcomeUpdateEntry {
   type: "outcome_update";
   relatedTransactionId: string;

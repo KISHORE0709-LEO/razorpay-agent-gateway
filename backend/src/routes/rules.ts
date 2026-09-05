@@ -56,3 +56,16 @@ export const handleSaveRules = async (req: Request, res: Response): Promise<void
     res.status(500).json({ error: error.message || "Failed to save rules to Firestore" });
   }
 };
+
+export const handleGetPolicyStrategies = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const merchantId = (req.query.merchantId as string) || "demo_merchant";
+    const { generatePolicyStrategies } = await import("../services/policyAdvisor");
+    const strategies = await generatePolicyStrategies(merchantId);
+    res.json({ strategies });
+  } catch (error: any) {
+    console.error("Error generating policy advisor strategies:", error);
+    res.status(500).json({ error: error.message || "Failed to generate policy advisor strategies" });
+  }
+};
+

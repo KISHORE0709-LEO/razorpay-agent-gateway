@@ -32,11 +32,13 @@ import {
   Plus,
   RefreshCw,
   Save,
+  Scale,
   Search,
   Settings2,
   ShieldCheck,
   Sparkles,
   Trash2,
+  TrendingUp,
   User,
   X,
   Zap,
@@ -47,6 +49,8 @@ import { fetchProductImage, DEFAULT_FALLBACK_IMAGE } from "@/lib/pexels";
 import { CATEGORIES, CATALOG } from "@/lib/catalog";
 import { AGENT_ID, useFirewall, SubmitResult } from "@/lib/store";
 import { Decision, Product, Rules, Campaign, AuditEntry } from "@/lib/types";
+import { PolicyStrategy } from "@shared/api";
+import { generatePolicyStrategies } from "@/lib/advisor";
 import { GENESIS_HASH, computeEntryHash, shortHash } from "@/lib/hash";
 import { AgentTrustBadge } from "@/components/AgentTrustBadge";
 import { OverviewCharts } from "@/components/OverviewCharts";
@@ -909,6 +913,50 @@ function RulesPanel() {
   const [catalogCategories, setCatalogCategories] = useState<string[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(true);
 
+  // Policy Advisor state
+  const [advisorOpen, setAdvisorOpen] = useState(false);
+  const [advisorLoading, setAdvisorLoading] = useState(false);
+  const [strategies, setStrategies] = useState<PolicyStrategy[] | null>(null);
+  const [appliedNotice, setAppliedNotice] = useState<string | null>(null);
+  const formRef = useRef<HTMLFormElement | null>(null);
+
+  async function handleGetAdvisorSuggestions() {
+    if (advisorOpen && strategies) {
+      setAdvisorOpen(false);
+      return;
+    }
+    setAdvisorOpen(true);
+    setAdvisorLoading(true);
+    try {
+      const result = await generatePolicyStrategies("demo_merchant");
+      setStrategies(result);
+    } catch (err) {
+      console.error("Failed to generate advisor strategies:", err);
+    } finally {
+      setAdvisorLoading(false);
+    }
+  }
+
+  function applyStrategy(strat: PolicyStrategy) {
+    if (!draft) return;
+    setDraft({
+      ...draft,
+      maxOrder: strat.maxOrderAmount,
+      dailyLimit: strat.dailySpendLimit,
+      approvalAbove: strat.approvalThreshold,
+      maxDiscount: strat.maxDiscountPercent,
+      categories: [...strat.suggestedCategories],
+    });
+    setAppliedNotice(
+      `Applied "${strat.name}" strategy parameters to draft! Review below and click "Save rules" to commit.`
+    );
+    setSaved(false);
+    setError(null);
+    setTimeout(() => {
+      formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 150);
+  }
+
   // Dynamically listen to unique categories currently in the merchant's catalog
   useEffect(() => {
     const catalogRef = collection(db, "merchants/demo_merchant/catalog");
@@ -1056,17 +1104,197 @@ function RulesPanel() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-7">
-      <div className="flex items-center justify-between">
+    <div className="mx-auto max-w-5xl space-y-7">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <p className="text-sm text-muted-foreground">Control what your agents can spend</p>
           <h2 className="mt-1 text-2xl font-bold tracking-tight text-brand-navy">Firewall rules</h2>
         </div>
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-700">
-          <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-          Server Synced
-        </span>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={handleGetAdvisorSuggestions}
+            disabled={advisorLoading}
+            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-brand-blue to-indigo-600 px-4 py-2.5 text-xs font-semibold text-white shadow-md shadow-brand-blue/20 hover:brightness-110 transition active:scale-95 disabled:opacity-50 cursor-pointer"
+          >
+            {advisorLoading ? (
+              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Sparkles className="h-3.5 w-3.5 text-amber-300" />
+            )}
+            Get Advisor Suggestions
+          </button>
+          <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-700">
+            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+            Server Synced
+          </span>
+        </div>
       </div>
+
+      {/* Policy Advisor Panel */}
+      {advisorOpen && (
+        <div className="rounded-2xl border border-indigo-500/30 bg-gradient-to-b from-indigo-500/5 via-card to-card p-6 sm:p-7 shadow-lg space-y-5 animate-in fade-in slide-in-from-top-3 duration-200">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60 pb-4">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-500/15 text-indigo-600 dark:text-indigo-400">
+                <Sparkles className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-brand-navy">AI Policy Advisor</h3>
+                <p className="text-xs text-muted-foreground">
+                  Data-driven strategies modeled from your catalog price curve and 30-day transaction history.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleGetAdvisorSuggestions}
+                disabled={advisorLoading}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition hover:bg-muted"
+                title="Refresh Suggestions"
+              >
+                <RefreshCw className={cn("h-3.5 w-3.5", advisorLoading && "animate-spin")} />
+                Refresh
+              </button>
+              <button
+                type="button"
+                onClick={() => setAdvisorOpen(false)}
+                className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition"
+                aria-label="Close Advisor Panel"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          {advisorLoading ? (
+            <div className="py-12 text-center space-y-3">
+              <RefreshCw className="mx-auto h-7 w-7 animate-spin text-indigo-500" />
+              <p className="text-sm font-medium text-brand-navy">Synthesizing merchant catalog & transaction metrics...</p>
+              <p className="text-xs text-muted-foreground">Calibrating median price, risk boundaries, and volume cushions</p>
+            </div>
+          ) : strategies ? (
+            <div className="grid gap-5 md:grid-cols-3">
+              {strategies.map((strat) => {
+                const isBalanced = strat.name === "Balanced";
+                const isConservative = strat.name === "Conservative";
+                const isGrowth = strat.name === "Growth";
+
+                const borderClass = isBalanced
+                  ? "border-brand-blue ring-1 ring-brand-blue/40 shadow-md bg-card"
+                  : isGrowth
+                  ? "border-purple-400/40 bg-card hover:border-purple-500/60 transition shadow-xs"
+                  : "border-border bg-card hover:border-border/80 transition";
+
+                const badgeBg = isBalanced
+                  ? "bg-brand-blue text-white"
+                  : isGrowth
+                  ? "bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300"
+                  : "bg-muted text-muted-foreground";
+
+                const IconComponent = isConservative ? ShieldCheck : isGrowth ? TrendingUp : Scale;
+
+                return (
+                  <div
+                    key={strat.name}
+                    className={cn("rounded-xl border p-5 flex flex-col justify-between space-y-4", borderClass)}
+                  >
+                    <div className="space-y-3.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <IconComponent
+                            className={cn(
+                              "h-4 w-4",
+                              isBalanced ? "text-brand-blue" : isGrowth ? "text-purple-600" : "text-muted-foreground"
+                            )}
+                          />
+                          <h4 className="font-bold text-brand-navy text-sm">{strat.name}</h4>
+                        </div>
+                        <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider", badgeBg)}>
+                          {isBalanced ? "Recommended" : isGrowth ? "Revenue Scale" : "Max Safety"}
+                        </span>
+                      </div>
+
+                      {/* 4 Numbers Grid */}
+                      <div className="grid grid-cols-2 gap-2 rounded-lg bg-muted/40 p-3 text-xs">
+                        <div>
+                          <span className="text-[10px] text-muted-foreground block">Max Order</span>
+                          <span className="font-mono font-bold text-brand-navy">₹{strat.maxOrderAmount.toLocaleString("en-IN")}</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground block">Approval Above</span>
+                          <span className="font-mono font-bold text-brand-navy">₹{strat.approvalThreshold.toLocaleString("en-IN")}</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground block">Daily Spend Limit</span>
+                          <span className="font-mono font-bold text-brand-navy">₹{strat.dailySpendLimit.toLocaleString("en-IN")}</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground block">Max Discount</span>
+                          <span className="font-mono font-bold text-brand-navy">{strat.maxDiscountPercent}%</span>
+                        </div>
+                      </div>
+
+                      {/* Reasoning */}
+                      <p className="text-xs leading-relaxed text-muted-foreground">
+                        {strat.reasoning}
+                      </p>
+
+                      {/* Suggested Categories */}
+                      <div>
+                        <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground block mb-1">
+                          Allowed Categories ({strat.suggestedCategories.length})
+                        </span>
+                        <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto">
+                          {strat.suggestedCategories.map((c) => (
+                            <span
+                              key={c}
+                              className="rounded-md bg-background border border-border px-1.5 py-0.5 text-[10px] font-medium text-foreground"
+                            >
+                              {c}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => applyStrategy(strat)}
+                      className={cn(
+                        "w-full rounded-xl py-2.5 text-xs font-semibold transition active:scale-[0.98] cursor-pointer",
+                        isBalanced
+                          ? "bg-brand-blue text-white hover:brightness-110 shadow-sm"
+                          : "bg-muted hover:bg-muted/80 text-foreground border border-border"
+                      )}
+                    >
+                      Apply this strategy
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {/* Applied Strategy Notification Banner */}
+      {appliedNotice && (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-brand-blue/30 bg-brand-blue/10 p-4 text-xs font-medium text-brand-navy animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-brand-blue shrink-0" />
+            <span>{appliedNotice}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setAppliedNotice(null)}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
 
       {error && (
         <div className="flex items-center gap-3 rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-700">
@@ -1078,7 +1306,7 @@ function RulesPanel() {
         </div>
       )}
 
-      <form onSubmit={save} className="rounded-2xl border border-brand-blue/20 bg-card p-6 sm:p-8">
+      <form onSubmit={save} ref={formRef} className="rounded-2xl border border-brand-blue/20 bg-card p-6 sm:p-8">
         <div className="grid gap-6 sm:grid-cols-2">
           <NumberField label="Max order amount" hint="Hard cap per transaction" value={draft.maxOrder} onChange={(v) => update("maxOrder", v)} />
           <NumberField label="Daily spend limit" hint="Across all AI agents" value={draft.dailyLimit} onChange={(v) => update("dailyLimit", v)} />
