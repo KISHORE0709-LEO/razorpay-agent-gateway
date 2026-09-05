@@ -906,6 +906,33 @@ function RulesPanel() {
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [catalogCategories, setCatalogCategories] = useState<string[]>([]);
+  const [loadingCategories, setLoadingCategories] = useState(true);
+
+  // Dynamically listen to unique categories currently in the merchant's catalog
+  useEffect(() => {
+    const catalogRef = collection(db, "merchants/demo_merchant/catalog");
+    const unsub = onSnapshot(
+      catalogRef,
+      (snap) => {
+        const catSet = new Set<string>();
+        snap.forEach((d) => {
+          const cat = d.data()?.category;
+          if (cat && typeof cat === "string" && cat.trim()) {
+            catSet.add(cat.trim());
+          }
+        });
+        const list = Array.from(catSet).sort((a, b) => a.localeCompare(b));
+        setCatalogCategories(list);
+        setLoadingCategories(false);
+      },
+      (err) => {
+        console.error("Error listening to catalog categories in RulesPanel:", err);
+        setLoadingCategories(false);
+      }
+    );
+    return () => unsub();
+  }, []);
 
   // Fresh read from Firestore server on mount — no stale cache or component defaults
   useEffect(() => {
@@ -1059,18 +1086,73 @@ function RulesPanel() {
           <NumberField label="Maximum discount" hint="Allowed agent discount" value={draft.maxDiscount} suffix="%" onChange={(v) => update("maxDiscount", v)} />
         </div>
         <div className="mt-8 border-t border-border pt-6">
-          <div className="mb-3">
-            <h3 className="text-sm font-semibold text-brand-navy">Allowed categories</h3>
-            <p className="mt-1 text-xs text-muted-foreground">Requests outside these categories are blocked automatically.</p>
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-brand-navy">Allowed categories</h3>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Dynamically synced with catalog. Requests outside checked categories are blocked automatically.
+              </p>
+            </div>
+            {!loadingCategories && (
+              <span className="text-[11px] font-mono text-muted-foreground">
+                {catalogCategories.length} in catalog
+              </span>
+            )}
           </div>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {CATEGORIES.map((category) => (
-              <label key={category} className={cn("flex cursor-pointer items-center gap-3 rounded-xl border p-3 text-sm transition", draft.categories.includes(category) ? "border-brand-blue/40 bg-brand-blue/5 text-brand-navy font-medium" : "border-border text-muted-foreground")}>
-                <input type="checkbox" checked={draft.categories.includes(category)} onChange={(e) => update("categories", e.target.checked ? [...draft.categories, category] : draft.categories.filter((c) => c !== category))} className="h-4 w-4 accent-brand-blue" />
-                {category}
-              </label>
-            ))}
-          </div>
+
+          {loadingCategories ? (
+            <div className="flex items-center gap-2 py-4 text-xs text-muted-foreground">
+              <RefreshCw className="h-3.5 w-3.5 animate-spin text-brand-blue" />
+              <span>Scanning catalog for categories...</span>
+            </div>
+          ) : catalogCategories.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+              No products found in catalog. Add products with categories to configure allowed categories.
+            </div>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {catalogCategories.map((category) => {
+                const isChecked = draft.categories.some(
+                  (c) => c.trim().toLowerCase() === category.trim().toLowerCase()
+                );
+                return (
+                  <label
+                    key={category}
+                    className={cn(
+                      "flex cursor-pointer items-center gap-3 rounded-xl border p-3 text-sm transition",
+                      isChecked
+                        ? "border-brand-blue/40 bg-brand-blue/5 text-brand-navy font-medium"
+                        : "border-border text-muted-foreground hover:bg-muted/30"
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          update("categories", [
+                            ...draft.categories.filter(
+                              (c) => c.trim().toLowerCase() !== category.trim().toLowerCase()
+                            ),
+                            category,
+                          ]);
+                        } else {
+                          update(
+                            "categories",
+                            draft.categories.filter(
+                              (c) => c.trim().toLowerCase() !== category.trim().toLowerCase()
+                            )
+                          );
+                        }
+                      }}
+                      className="h-4 w-4 accent-brand-blue"
+                    />
+                    {category}
+                  </label>
+                );
+              })}
+            </div>
+          )}
         </div>
         <div className="mt-8 flex items-center justify-end gap-4 border-t border-border pt-6">
           <span className={cn("flex items-center gap-1.5 text-xs font-medium text-success transition-opacity duration-200", saved ? "opacity-100" : "opacity-0")}>
@@ -1166,25 +1248,26 @@ function CatalogPanel() {
     return () => unsub();
   }, []);
 
-  // Compute summary stats
+  // Compute summary stats live from actual product list
   const totalProducts = products.length;
-  const categories = useMemo(() => {
+
+  // Distinct categories actually present in live catalog products
+  const distinctCatalogCategories = useMemo(() => {
     const set = new Set<string>();
     products.forEach((p) => {
-      if (p.category) set.add(p.category);
+      if (p.category && p.category.trim()) set.add(p.category.trim());
     });
-    // Ensure default categories are available in dropdown
-    CATEGORIES.forEach((c) => set.add(c));
-    return Array.from(set);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [products]);
 
-  const totalCategories = useMemo(() => {
-    const set = new Set<string>();
-    products.forEach((p) => {
-      if (p.category) set.add(p.category);
-    });
-    return set.size;
-  }, [products]);
+  const totalCategories = distinctCatalogCategories.length;
+
+  // Available options for Add/Edit product modal (distinct categories + default suggestions)
+  const formCategories = useMemo(() => {
+    const set = new Set<string>(distinctCatalogCategories);
+    CATEGORIES.forEach((c) => set.add(c));
+    return Array.from(set);
+  }, [distinctCatalogCategories]);
 
   const { minPrice, maxPrice, totalStock } = useMemo(() => {
     if (products.length === 0) return { minPrice: 0, maxPrice: 0, totalStock: 0 };
@@ -1223,7 +1306,7 @@ function CatalogPanel() {
     setEditingItem(null);
     setForm({
       name: "",
-      category: categories[0] || "Electronics",
+      category: formCategories[0] || "Electronics",
       customCategory: "",
       price: "",
       stock: "50",
@@ -1236,8 +1319,8 @@ function CatalogPanel() {
     setEditingItem(prod);
     setForm({
       name: prod.name,
-      category: categories.includes(prod.category) ? prod.category : "__CUSTOM__",
-      customCategory: categories.includes(prod.category) ? "" : prod.category,
+      category: formCategories.includes(prod.category) ? prod.category : "__CUSTOM__",
+      customCategory: formCategories.includes(prod.category) ? "" : prod.category,
       price: prod.price,
       stock: prod.stock ?? 0,
       imageUrl: prod.imageUrl || "",
@@ -1359,8 +1442,8 @@ function CatalogPanel() {
             <LayoutDashboard className="h-4 w-4 text-brand-blue" />
           </div>
           <div className="mt-4 text-2xl font-bold font-mono text-brand-navy">{totalCategories}</div>
-          <div className="mt-1 text-xs text-muted-foreground truncate" title={categories.join(", ")}>
-            Across {categories.length} category types
+          <div className="mt-1 text-xs text-muted-foreground truncate" title={distinctCatalogCategories.join(", ")}>
+            Across {totalCategories} active category {totalCategories === 1 ? "type" : "types"}
           </div>
         </div>
 
@@ -1409,7 +1492,7 @@ function CatalogPanel() {
           >
             All ({products.length})
           </button>
-          {categories.map((cat) => {
+          {distinctCatalogCategories.map((cat) => {
             const count = products.filter((p) => p.category === cat).length;
             return (
               <button
@@ -1566,7 +1649,7 @@ function CatalogPanel() {
                     onChange={(e) => setForm({ ...form, category: e.target.value })}
                     className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm text-brand-navy outline-none transition focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/15"
                   >
-                    {categories.map((cat) => (
+                    {formCategories.map((cat) => (
                       <option key={cat} value={cat}>
                         {cat}
                       </option>
