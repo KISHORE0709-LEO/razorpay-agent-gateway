@@ -2,22 +2,22 @@
 
 <div align="center">
 
-[![Hackathon](https://img.shields.io/badge/Razorpay-AI_Growth_%26_Agentic_Commerce-0C2340?style=for-the-badge&logo=razorpay&logoColor=3395FF)](https://razorpay.com)
+[![Razorpay](https://img.shields.io/badge/Razorpay-AI_Growth_%26_Agentic_Commerce-0C2340?style=for-the-badge&logo=razorpay&logoColor=3395FF)](https://razorpay.com)
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![React 18](https://img.shields.io/badge/React_18-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://reactjs.org/)
 [![Express](https://img.shields.io/badge/Express.js-000000?style=for-the-badge&logo=express&logoColor=white)](https://expressjs.com/)
 [![Firebase Firestore](https://img.shields.io/badge/Firestore-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)](https://firebase.google.com/)
 [![Groq Cloud](https://img.shields.io/badge/Groq_Cloud-F55036?style=for-the-badge&logo=fastapi&logoColor=white)](https://groq.com)
-[![Razorpay](https://img.shields.io/badge/Razorpay_Orders_API-02042B?style=for-the-badge&logo=razorpay&logoColor=3395FF)](https://razorpay.com/docs/api/orders/)
+[![Razorpay Orders API](https://img.shields.io/badge/Razorpay_Orders_API-02042B?style=for-the-badge&logo=razorpay&logoColor=3395FF)](https://razorpay.com/docs/api/orders/)
 [![SHA-256](https://img.shields.io/badge/Ledger-SHA--256_Hash_Chained-success?style=for-the-badge)](https://en.wikipedia.org/wiki/SHA-2)
 
 <br/>
 
-### **The Deterministic Policy & Governance Layer Between Autonomous AI Buyers and Your Razorpay Gateway.**
+### **The Deterministic Policy, Recovery & Governance Gateway Between Autonomous AI Buyer Agents and Merchant Rails.**
 
 *Built for Razorpay's AI Growth & Agentic Commerce Hackathon*
 
-[Explore Architecture](#-system-architecture) • [Policy Pipeline](#-decision-engine--5-stage-pipeline) • [The 4 Outcomes](#-the-four-governance-outcomes) • [Cryptographic Ledger](#-cryptographic-hash-chained-audit-trail) • [Getting Started](#-getting-started)
+[Live Architecture](#-system-architecture) • [Decision Engine](#-the-4-way-governed-decision-engine) • [Key Features](#-key-features--capabilities) • [Cryptographic Ledger](#-cryptographic-sha-256-verdict-chain) • [Getting Started](#-getting-started) • [Meet the Developer](#-meet-the-developer)
 
 </div>
 
@@ -25,164 +25,202 @@
 
 ## 📌 Executive Summary
 
-Autonomous AI agents (powered by LLMs, browser automation, and personal delegates) are beginning to shop and settle payments on behalf of consumers and businesses. However, traditional payment gateways are designed exclusively for **human checkouts**—relying on interactive browser sessions, manual form filling, and OTPs.
+Autonomous AI shopping agents—powered by LLMs, browser automations, and personal financial delegates—can now discover goods, negotiate terms, and attempt purchases autonomously. However, traditional payment gateways are designed strictly for **interactive human sessions** (relying on browser sessions, checkout redirects, and OTPs).
 
 When an AI buyer agent attempts to transact directly with a merchant, three critical vulnerabilities emerge:
-1. **Zero Policy Governance:** The merchant cannot restrict agent budgets, limits, or authorized merchandise categories.
-2. **Binary Checkout Drop-off:** A single rule violation (such as an item being ₹50 over budget) causes a hard drop-off, permanently killing the sale.
-3. **Absence of Proof & Auditability:** Merchants and users have no tamper-evident log explaining *who* the agent was, *why* a decision was made, or *which* policy allowed the transaction.
+1. **Zero Policy Governance:** Merchants cannot limit per-order amounts, daily velocity pools, or authorized merchandise categories for non-human buyers.
+2. **Binary Checkout Drop-off:** A single rule violation (such as an item priced ₹50 above an agent's ceiling) causes a hard drop-off, permanently killing merchant revenue.
+3. **Absence of Proof & Auditability:** Neither merchants nor consumers have an audit-proof, tamper-evident log explaining *who* the agent was, *why* a verdict was rendered, or *which* policy allowed the transaction.
 
-**SentryPay solves this as a middleware gateway.** It acts as an intelligent transaction firewall between any AI shopping agent and the Razorpay Orders API. Every purchase request is intercepted, identity-verified, policy-evaluated in strict sequence, and logged to a tamper-proof cryptographic ledger before a single rupee can move.
+**SentryPay is the missing middleware layer.** It sits between any autonomous AI buyer agent and Razorpay. Every purchase request is intercepted, identity-verified, policy-evaluated in sub-50ms, and cryptographically sealed into a SHA-256 hash chain before a single rupee can move.
 
 ---
 
-## 💡 What Makes SentryPay Revolutionary: The "Recovery" Paradigm
+## 💡 The Core Innovation: "Smart Recovery" vs. Binary Rejections
 
-Traditional payment gateways and firewalls enforce binary logic: **APPROVE or BLOCK**.
+Traditional gateways and firewalls enforce binary logic: **APPROVE or BLOCK**.
 
-In agentic commerce, flat rejections are catastrophic:
-- If an agent wants to buy a premium product priced at **₹5,800**, but the merchant's per-order firewall cap is **₹5,000**, conventional systems simply reject the transaction. The buyer leaves, and the revenue is lost forever.
+In agentic commerce, outright rejections destroy conversion:
+- If an agent wants to buy headphones priced at **₹5,800**, but the merchant's per-order firewall cap is **₹5,000**, conventional systems simply reject the transaction. The buyer leaves, and the sale is lost forever.
 
-### 🔄 The SentryPay Recovery Engine
-Instead of terminating the purchase, SentryPay dynamically activates **Recovery Mode**:
-1. It queries the merchant's live Firestore catalog in real time.
-2. It filters for in-budget alternatives under the **₹5,000** limit within the exact same category.
-3. It identifies the highest-value matching item (e.g., a **₹4,899** alternative).
-4. It issues a structured **Recovery Offer** back to the AI buyer agent.
-5. Once accepted, the purchase executes seamlessly via Razorpay.
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│ Traditional Gateway:   ₹5,800 Request  ──►  [Cap: ₹5,000]  ──►  ❌ BLOCK  │
+│ SentryPay Gateway:     ₹5,800 Request  ──►  [Cap: ₹5,000]  ──►  🔄 RECOVER│
+│                        └── Suggests In-Budget ₹4,899 Item  ──►  ✅ SALE!  │
+└──────────────────────────────────────────────────────────────────────────┘
+```
 
-> **Result:** SentryPay transforms would-be blocked transactions into completed revenue while strictly maintaining merchant financial boundaries.
+### 🔄 How SentryPay Smart Recovery Works:
+1. Intercepts the over-budget purchase request.
+2. Queries the merchant's live Firestore catalog in real time.
+3. Finds matching products within the **exact same category** where `price <= rules.maxOrderAmount`.
+4. Identifies the closest in-budget alternative (e.g., a **₹4,899** alternative).
+5. Returns a structured **Recovery Offer** with transparent savings details.
+6. Once accepted, the purchase settles immediately via Razorpay.
 
 ---
 
 ## 🏗️ System Architecture
 
-The following diagram illustrates how an AI buyer agent request moves through SentryPay's pipeline:
-
 ```mermaid
 flowchart TD
-    subgraph Buyer [" 🤖 AI Buyer Layer "]
-        User[User Prompt / Agent Goal] -->|Natural Language| Agent[AI Shopping Agent]
-        Agent -->|POST /api/chat| GroqLLM[Groq LLM Engine\nopenai/gpt-oss-20b]
-        GroqLLM -->|Extracts Intent, Category & Budget| ParsedIntent[Structured Intent & Catalog Match]
+    classDef agent fill:#0A192F,stroke:#0D94FB,stroke-width:2px,color:#fff;
+    classDef firewall fill:#071D3A,stroke:#2dd4bf,stroke-width:2px,color:#fff;
+    classDef outcome fill:#001733,stroke:#38bdf8,stroke-width:1.5px,color:#fff;
+    classDef payment fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#fff;
+    classDef audit fill:#311042,stroke:#c084fc,stroke-width:2px,color:#fff;
+
+    subgraph ClientLayer [" 🤖 1. Autonomous AI Buyer Layer "]
+        Buyer["AI Buyer Agent\n(agt_live_7f3c9e)"]:::agent
+        Prompt["User Mandate / Budget Cap\n(e.g., AP2 Mandates)"]:::agent
+        Groq["Groq LLM Engine\n(Intent & Catalog Match)"]:::agent
+        Buyer --> Prompt --> Groq
     end
 
-    subgraph SentryPay [" 🛡️ SentryPay Transaction Firewall Gateway "]
-        ParsedIntent -->|POST /api/evaluate| FirewallEngine[Deterministic Policy Engine]
-        
-        RulesDB[(Firestore Rules:\nmerchants/id/rules/current)] -->|Fetch Limits| FirewallEngine
-        DailyDB[(Firestore Daily Spend:\nmerchants/id/dailySpend/agent_date)] -->|Check Cumulative Spend| FirewallEngine
-        CatalogDB[(Firestore Catalog:\nmerchants/id/catalog)] -->|Dynamic Alternative Query| RecoveryEngine[Catalog Recovery Engine]
+    subgraph GatewayLayer [" 🛡️ 2. SentryPay Firewall Middleware "]
+        Evaluate["POST /api/evaluate\n(Sub-50ms Policy Engine)"]:::firewall
+        PolicyRules[("Firestore: Rules\n(Caps, Velocity, Allowed Categories)")]:::firewall
+        LiveCatalog[("Firestore: Catalog\n(Live Categories & Inventory)")]:::firewall
+        DailySpend[("Firestore: DailySpend\n(Cumulative Velocity Pool)")]:::firewall
 
-        FirewallEngine --> Check1{1. Category Allowed?}
-        Check1 -- No --> BlockOut[🔴 Outcome: BLOCKED]
-        Check1 -- Yes --> Check2{2. Under Per-Order Cap?}
-        
-        Check2 -- No --> RecoveryEngine
-        RecoveryEngine --> FoundAlt{Alternative Found?}
-        FoundAlt -- Yes --> RecoverOut[🔵 Outcome: RECOVERED]
-        FoundAlt -- No --> BlockOut
+        Groq --> Evaluate
+        PolicyRules --> Evaluate
+        LiveCatalog --> Evaluate
+        DailySpend --> Evaluate
 
-        Check2 -- Yes --> Check3{3. Under Daily Spend Limit?}
-        Check3 -- No --> BlockOut
-        Check3 -- Yes --> Check4{4. Over Approval Threshold?}
+        CheckCat{"Category Allowed?"}:::firewall
+        CheckCap{"Under Max Order Cap?"}:::firewall
+        CheckDaily{"Under Daily Limit?"}:::firewall
+        CheckThreshold{"Over Approval Threshold?"}:::firewall
 
-        Check4 -- Yes --> EscalateOut[🟡 Outcome: ESCALATED]
-        Check4 -- No --> ApproveOut[🟢 Outcome: APPROVED]
+        Evaluate --> CheckCat
+        CheckCat -- "No" --> OutcomeBlock["🔴 BLOCK\n(Immutable Reason)"]:::outcome
+        CheckCat -- "Yes" --> CheckCap
+
+        CheckCap -- "No" --> RecoveryEngine["🔄 Recovery Search\n(Find in-budget alternative)"]:::firewall
+        RecoveryEngine --> AltFound{"Alternative Found?"}:::firewall
+        AltFound -- "Yes" --> OutcomeRecover["🟡 RECOVER\n(Return Offer)"]:::outcome
+        AltFound -- "No" --> OutcomeBlock
+
+        CheckCap -- "Yes" --> CheckDaily
+        CheckDaily -- "No" --> OutcomeBlock
+        CheckDaily -- "Yes" --> CheckThreshold
+
+        CheckThreshold -- "Yes" --> OutcomeEscalate["🟠 ESCALATE\n(Live Human Queue)"]:::outcome
+        CheckThreshold -- "No" --> OutcomeApprove["🟢 APPROVE\n(Instant Settlement)"]:::outcome
     end
 
-    subgraph Execution [" ⚡ Settlement & Ledger Execution "]
-        ApproveOut --> RazorpayAPI[Razorpay Orders API\nTest-Mode Order Creation]
-        RecoverOut -->|User / Agent Accepts| RazorpayAPI
-        
-        EscalateOut -->|Real-Time WebSockets| ApprovalQueue[Merchant Live Approval Queue]
-        ApprovalQueue -->|Merchant Approves| RazorpayAPI
-        ApprovalQueue -->|Merchant Denies| BlockOut
+    subgraph ExecutionLayer [" ⚡ 3. Settlement & Human Oversight "]
+        HumanQueue["Human-in-the-Loop Queue\n(0ms Optimistic 1-Tap Sign-off)"]:::firewall
+        OutcomeEscalate --> HumanQueue
+        HumanQueue -- "Approve" --> OutcomeApprove
+        HumanQueue -- "Deny" --> OutcomeBlock
 
-        RazorpayAPI -->|Order ID & Status| CryptoLedger[SHA-256 Hash-Chained Ledger]
-        BlockOut --> CryptoLedger
+        RazorpayAPI["Razorpay Orders API\n(Server-Side Protected order_...)"]:::payment
+        OutcomeApprove --> RazorpayAPI
+        OutcomeRecover -.->|"Agent Accepts"| RazorpayAPI
     end
 
-    subgraph Observability [" 📊 Merchant Console "]
-        CryptoLedger -->|Live Firestore onSnapshot| Dashboard[Real-time Merchant Dashboard]
-        Dashboard --> OverviewTab[Live Metrics & Spend Progress]
-        Dashboard --> QueueTab[Approval Queue Animations]
-        Dashboard --> AuditTab[Cryptographic Chain Verifier]
+    subgraph LedgerLayer [" 🔗 4. Tamper-Evident Cryptographic Ledger "]
+        AtomicLock["withChainLock\n(Zero-Fork Serialized Queue)"]:::audit
+        VerdictChain[("SHA-256 Hash Chain\nParent Chained from Genesis 000000...")]:::audit
+        VerifyEngine["1-Click Audit Verifier\n(Browser & Server Verification)"]:::audit
+
+        RazorpayAPI --> AtomicLock
+        OutcomeBlock --> AtomicLock
+        AtomicLock --> VerdictChain
+        VerdictChain --> VerifyEngine
     end
 
-    style SentryPay fill:#0c192c,stroke:#3b82f6,stroke-width:2px,color:#fff
-    style Buyer fill:#131d31,stroke:#64748b,stroke-width:1px,color:#fff
-    style Execution fill:#0a1e1b,stroke:#10b981,stroke-width:2px,color:#fff
-    style Observability fill:#1c162e,stroke:#8b5cf6,stroke-width:1px,color:#fff
+    subgraph ReputationLayer [" 📈 5. Intelligence & Growth Engine "]
+        TrustScore["AI Agent Trust Scoring\n(0-100 Reputation Metrics)"]:::audit
+        Campaigns["Safe Campaign Orchestrator\n(Time-Boxed +20% Promo Boosts)"]:::audit
+        Advisor["Policy Advisor\n(Catalog Median-Calibrated Rules)"]:::audit
+
+        VerdictChain --> TrustScore
+        LiveCatalog --> Advisor
+        Advisor --> PolicyRules
+        Campaigns --> PolicyRules
+    end
 ```
 
 ---
 
-## ⚙️ Decision Engine — 5-Stage Policy Pipeline
+## 🎯 The 4-Way Governed Decision Engine
 
-SentryPay evaluates purchase requests through a strictly ordered, deterministic pipeline:
+Every purchase request evaluated by SentryPay resolves into one of four deterministic outcomes:
 
-```mermaid
-graph LR
-    A["Stage 1: Identity & Category Allow-list"] --> B["Stage 2: Per-Order Amount Cap"]
-    B --> C["Stage 3: Cumulative Daily Spend Limit"]
-    C --> D["Stage 4: High-Value Approval Threshold"]
-    D --> E["Stage 5: Settlement & Hash Chaining"]
-
-    style A fill:#1e293b,stroke:#3b82f6,color:#fff
-    style B fill:#1e293b,stroke:#3b82f6,color:#fff
-    style C fill:#1e293b,stroke:#3b82f6,color:#fff
-    style D fill:#1e293b,stroke:#3b82f6,color:#fff
-    style E fill:#064e3b,stroke:#10b981,color:#fff
-```
-
-### Evaluation Order & Rules
-
-1. **Stage 1: Category Allow-List Verification**
-   - Matches product's category against the merchant's permitted categories list (e.g., `["Electronics", "Fashion", "Home & Kitchen", "Groceries"]`).
-   - If outside the allow-list: Immediate **HARD BLOCK** with a plain-language explanation.
-
-2. **Stage 2: Per-Order Cap & Recovery Trigger**
-   - Evaluates if requested amount exceeds `rules.maxOrderAmount`.
-   - If exceeded: Queries the catalog for products in the same category where `price <= rules.maxOrderAmount`. Returns the closest matching alternative as a **RECOVERY OFFER**. If no alternative exists, marks as blocked.
-
-3. **Stage 3: Real-Time Cumulative Daily Spend Limit**
-   - Checks `merchants/{merchantId}/dailySpend/{agentId_YYYY-MM-DD}`.
-   - If `todaySpent + requestedAmount > rules.dailySpendLimit`: Triggers **HARD BLOCK** to prevent runaway agent loops or treasury exhaustion.
-
-4. **Stage 4: High-Value Human-in-the-Loop Threshold**
-   - If `requestedAmount > rules.approvalThreshold`: Triggers **ESCALATION**.
-   - Transaction document is created with status `pending`. Pushed in real time to the merchant's Approval Queue.
-
-5. **Stage 5: Autonomous Approval & Settlement**
-   - If all limits and thresholds pass: Triggers **APPROVE**.
-   - Invokes Razorpay's test-mode Orders API, generates a genuine Razorpay order ID, updates daily spend, and appends the transaction to the SHA-256 audit chain.
-
----
-
-## 🎯 The Four Governance Outcomes
-
-Every incoming agent request concludes in one of four distinct outcomes:
-
-| Outcome | Trigger Condition | System Action | UI Representation |
+| Outcome | Trigger Condition | System Action | Merchant Impact |
 |:---:|---|---|---|
-| <span style="color:#10b981">**APPROVE**</span> | Passes all policy checks, budget cap, daily limit, and threshold. | Automatically calls Razorpay Orders API, generates `order_xxx`, sets status `completed`, updates daily spend. | **Confirmation Card** with green badge, Razorpay Order ID, and amount. |
-| <span style="color:#3b82f6">**RECOVER**</span> | Exceeds per-order cap, but an in-budget alternative exists in the catalog. | Queries Firestore catalog for closest matching product in the same category under the cap. | **Recovery Offer Card** displaying alternative product, price savings, and **[Accept]** / **[Decline]** buttons. |
-| <span style="color:#f59e0b">**ESCALATE**</span> | Within hard limits, but exceeds human approval threshold. | Halts automatic execution, creates `pending` transaction document, pushes to live Approval Queue. | **Pending Approval Card** with pulsing live status indicator awaiting merchant review. |
-| <span style="color:#ef4444">**BLOCK**</span> | Violates allowed category, exceeds daily limit, or no recovery alternative exists. | Transaction rejected outright, no payment attempted. Documents exact policy violated. | **Rejection Card** with red border, ban icon, and human-readable policy violation message. |
+| <span style="color:#10b981;font-weight:bold">🟢 APPROVE</span> | Amount $\le$ Approval Threshold & All Limits Pass | Automatically calls Razorpay Orders API (`order_...`), commits transaction, and logs block hash. | **Zero Friction:** Instant automated revenue. |
+| <span style="color:#f59e0b;font-weight:bold">🟡 RECOVER</span> | Amount $>$ Max Order Cap, but in-budget alternative exists in category | Queries live catalog, finds best alternative within budget, and returns structured recovery offer. | **Revenue Defense:** Converts would-be lost sales into closed orders. |
+| <span style="color:#f97316;font-weight:bold">🟠 ESCALATE</span> | Approval Threshold $<$ Amount $\le$ Max Order Cap | Halts automated checkout, assigns `pending` status, and pushes to real-time human queue with agent trust score. | **Risk Control:** Protects against unexpected high-value agent orders. |
+| <span style="color:#ef4444;font-weight:bold">🔴 BLOCK</span> | Disallowed category, daily limit exceeded, or no recovery match | Immediate hard stop. Logs immutable plain-text reason to the ledger without charging payment rails. | **Treasury Protection:** Prevents unauthorized spending and runaway loops. |
 
 ---
 
-## 🔗 Cryptographic SHA-256 Hash-Chained Audit Trail
+## 🚀 Key Features & Capabilities
 
-To satisfy enterprise compliance and regulatory auditability, SentryPay records every single transaction event into a **cryptographic hash chain** modeled after blockchain ledgers.
+### 1. 🛡️ 4-Way Policy Firewall (<50ms Engine)
+- Deterministic sub-50ms rule evaluation against live merchant policies.
+- Per-order caps, cumulative daily velocity limits, and approval thresholds.
+- Enforces strict execution order to eliminate ambiguity.
+
+### 2. 🔄 Smart Catalog Recovery Engine
+- Dynamically queries merchant inventory when an agent exceeds price ceilings.
+- Finds nearest alternative product in the exact same category matching budget.
+- Returns structured JSON recovery offers that agents can accept programmatically.
+
+### 3. 👥 Human-in-the-Loop Instant Approval Queue
+- Zero-latency optimistic UI updates: approved/denied requests resolve in 0ms.
+- Built-in error rollback guards ensure consistency if network operations fail.
+- Displays buyer agent identity, historical reliability, and real-time trust scores.
+
+### 4. 🔗 SHA-256 Cryptographic Verdict Chain
+- Every approve, recover, escalate, block, and human decision is permanently hash-chained.
+- Canonical payload serialization: `prevHash | time | agent | product | amount | decision | reason`.
+- `withChainLock` atomic queue prevents chain forks during high-concurrency bursts.
+- Interactive 1-click **Verify Chain** audits all hashes back to the genesis block (`000000...`).
+
+### 5. 📦 Dynamic Catalog & Category Governance
+- Categories are generated dynamically from current inventory—never hardcoded.
+- Brand-new categories added to the catalog start **blocked by default** until explicitly approved.
+- Live catalog stat cards compute price ranges, median prices, stock levels, and counts in real time.
+
+### 6. 🧠 Autonomous AI Agent Trust Scoring
+- Evaluates buyer agents with an adaptive 0–100 behavioral reputation score.
+- Dynamic classification: `Flagged`, `Low`, `Neutral`, `Trusted`, and `Verified`.
+- Increases scrutiny for untrusted agents while preserving merchant hard limits.
+
+### 7. 📈 Safe Campaign Orchestrator
+- Recommends autonomous, time-boxed marketing limit boosts (e.g. Flash Sales, Clearance).
+- Enforces a strict **20% safety ceiling** above base rules to prevent runaway liability.
+- Automatically expires; strictly isolates overrides without ever mutating base rules.
+- Duplicate suppression ensures identical campaigns are not regenerated within 24 hours.
+
+### 8. 💡 Intelligent Policy Advisor
+- Computes calibrated rule recommendations using merchant's real catalog metrics.
+- Generates 3 distinct strategies: **Conservative**, **Balanced**, and **Growth**.
+- Automatically rounds caps to realistic transaction numbers based on catalog medians.
+
+### 9. 🔒 Isolated Razorpay Rails
+- Server-to-server Razorpay Orders API generation (`order_...`).
+- AI agents never touch secret keys, payment processor credentials, or raw cards.
+- Test-mode integration guarantees safe demonstrations without financial risk.
+
+---
+
+## 🔗 Cryptographic SHA-256 Verdict Chain
+
+SentryPay records every transaction event into an immutable cryptographic hash chain modeled after blockchain ledgers:
 
 ```
 GENESIS BLOCK: 0000000000000000000000000000000000000000000000000000000000000000
       │
       ▼
 ┌────────────────────────────────────────────────────────┐
-│ TRANSACTION #1                                         │
+│ BLOCK #1                                               │
 │ PrevHash: 0000000000000000000000000000000000000000...  │
 │ Payload:  time|agent|product|amount|decision|reason    │
 │ Hash:     a7c9f81d4e2b017835f8e6c431b9d408f623...     │
@@ -190,7 +228,7 @@ GENESIS BLOCK: 0000000000000000000000000000000000000000000000000000000000000000
       │
       ▼
 ┌────────────────────────────────────────────────────────┐
-│ TRANSACTION #2                                         │
+│ BLOCK #2                                               │
 │ PrevHash: a7c9f81d4e2b017835f8e6c431b9d408f623...     │
 │ Payload:  time|agent|product|amount|decision|reason    │
 │ Hash:     4d2091fbe398b0451a437de562c8201a91e0...     │
@@ -198,7 +236,7 @@ GENESIS BLOCK: 0000000000000000000000000000000000000000000000000000000000000000
       │
       ▼
 ┌────────────────────────────────────────────────────────┐
-│ TRANSACTION #3                                         │
+│ BLOCK #3                                               │
 │ PrevHash: 4d2091fbe398b0451a437de562c8201a91e0...     │
 │ Payload:  time|agent|product|amount|decision|reason    │
 │ Hash:     9f538e12d4a07c128475ba98ec65123901b8...     │
@@ -206,81 +244,9 @@ GENESIS BLOCK: 0000000000000000000000000000000000000000000000000000000000000000
 ```
 
 ### Deterministic Payload Serialization
-Every transaction is signed using the exact canonical formula:
+Every block hash is computed canonically:
 $$\text{Payload} = \text{prevHash} \parallel \text{time} \parallel \text{agent} \parallel \text{product} \parallel \text{amount} \parallel \text{decision} \parallel \text{reason}$$
 $$\text{Hash} = \text{SHA-256}(\text{Payload})$$
-
-### 🔍 Real "Verify Chain" Engine
-In the SentryPay merchant dashboard, the **Verify Chain** button does not simply display a static badge. It runs a live audit across the entire transaction collection:
-1. Re-fetches the full chronological chain from Firestore starting from Genesis.
-2. Validates that `block[n].prevHash === block[n-1].hash`.
-3. Recalculates the SHA-256 digest in the browser using the Web Crypto API (`crypto.subtle.digest`).
-4. If a single byte in any document (such as price, product, or reason) was tampered with, verification fails immediately, flagging the exact corrupted block ID.
-
----
-
-## 🗄️ Firestore Data Model
-
-The application uses a clean, normalized Firestore structure under the merchant document:
-
-```
-merchants/
-└── demo_merchant/
-    ├── rules/
-    │   └── current
-    ├── catalog/
-    │   ├── prod_1
-    │   ├── prod_2
-    │   └── ... (10 products)
-    ├── transactions/
-    │   ├── txn_01
-    │   ├── txn_02
-    │   └── ...
-    └── dailySpend/
-        └── agt_live_7f3c9e_2026-09-04
-```
-
-### Schema Definitions
-
-#### 1. Rules (`merchants/{id}/rules/current`)
-```json
-{
-  "maxOrderAmount": 4000,
-  "dailySpendLimit": 50000,
-  "allowedCategories": ["Electronics", "Fashion", "Home & Kitchen", "Groceries"],
-  "approvalThreshold": 3000,
-  "maxDiscountPercent": 15,
-  "updatedAt": "2026-09-04T18:20:00.000Z"
-}
-```
-
-#### 2. Daily Spend (`merchants/{id}/dailySpend/{agentId_date}`)
-```json
-{
-  "agentId": "agt_live_7f3c9e",
-  "date": "2026-09-04",
-  "amount": 7498,
-  "count": 3,
-  "updatedAt": "2026-09-04T18:24:00.000Z"
-}
-```
-
-#### 3. Transaction (`merchants/{id}/transactions/{txnId}`)
-```json
-{
-  "time": "2026-09-04T18:23:00.000Z",
-  "agent": "agt_live_7f3c9e",
-  "product": "Smart Fitness Watch",
-  "amount": 2999,
-  "decision": "approved",
-  "reason": "Within all policy limits",
-  "status": "completed",
-  "orderId": "order_79ry9jmq7",
-  "razorpayOrderId": "order_79ry9jmq7",
-  "prevHash": "0000000000000000000000000000000000000000000000000000000000000000",
-  "hash": "757c1e7c2a3fafd60e7c3e7215161c0d55b622b94ddb881e8023b7022be4fb47"
-}
-```
 
 ---
 
@@ -289,24 +255,23 @@ merchants/
 | Domain | Technology | Purpose |
 |---|---|---|
 | **Frontend UI** | React 18, Vite, TypeScript | Ultra-responsive Single Page Application |
-| **Styling & Motion** | Tailwind CSS v4, Framer Motion | Fintech design system, micro-animations, exit transitions |
-| **Icons** | Lucide React | Modern visual iconography |
-| **Backend API** | Express.js, Node.js, `tsx` | Secure API gateway endpoints with hot reloading |
-| **Database & Realtime** | Firebase Cloud Firestore | NoSQL document storage with real-time `onSnapshot` streaming |
-| **LLM & Agent Intent** | Groq API (`openai/gpt-oss-20b`) | Sub-second extraction of intent, category, and catalog matching |
-| **Payments** | Official `razorpay` Node SDK | Direct integration with Razorpay's Orders API |
-| **Integrity & Security** | Web Crypto API & Node.js `crypto` | Tamper-evident SHA-256 ledger chaining and audit verification |
+| **Styling & Motion** | TailwindCSS, Lucide React, Framer Motion | Fintech design system with dark luxury theme |
+| **Backend API** | Express.js, Node.js, `tsx` | High-performance API gateway with hot reload |
+| **Database & Realtime** | Firebase Cloud Firestore | NoSQL document storage with live `onSnapshot` streaming |
+| **LLM & Agent Intent** | Groq API (`llama-3.3-70b-versatile`) | Sub-second extraction of intent, category, and budget |
+| **Payments** | Official `razorpay` Node SDK | Server-side Razorpay Orders API generation |
+| **Integrity & Security** | Web Crypto API & Node.js `crypto` | Tamper-evident SHA-256 ledger chaining & audit verification |
 
 ---
 
-## 🌐 Protocol Alignment: The Future of Agentic Commerce
+## 🌐 Protocol Alignment
 
-SentryPay is architected to align with the emerging open standards and mandates for AI-driven financial transactions:
+SentryPay is designed to interoperate with emerging global and Indian agentic commerce standards:
 
 - **Google AP2 (Agent Payment Protocol):** Compatible with cryptographically signed buyer intent mandates.
-- **OpenAI / Stripe ACP (Agentic Commerce Protocol):** Implements the merchant-side policy boundary and structured checkout primitives.
-- **x402 Protocol:** Designed for automated HTTP 402 payment requirements and machine-to-machine settlements.
-- **NPCI UAP (Unified Agent Protocol for UPI India):** Matches the proposed Indian standards for delegated agent spending limits, human-in-the-loop approvals, and audit trail retention.
+- **OpenAI / Stripe ACP (Agentic Commerce Protocol):** Merchant-side policy boundaries and structured checkout primitives.
+- **x402 Protocol:** Supports machine-to-machine HTTP 402 payment requirements.
+- **NPCI Delegated UPI Spend:** Aligns with Indian standards for autonomous agent spending limits and human-in-the-loop oversight.
 
 ---
 
@@ -331,64 +296,85 @@ Create or verify `.env` in the root and `backend/.env`:
 PORT=8080
 GROQ_API_KEY=your_groq_api_key_here
 
-# Optional: Real Razorpay Test Keys (defaults to test dummy if not set)
+# Optional: Razorpay Test Keys (defaults to sandbox if unset)
 RAZORPAY_KEY_ID=rzp_test_yourKeyHere
 RAZORPAY_KEY_SECRET=yourSecretHere
 ```
 
 ### 3. Seed Database
-Seed your Firestore database with the demo merchant, firewall policies, initial daily spend document, and 10 realistic catalog items:
+Seed your Firestore database with the demo merchant, firewall policies, initial daily spend counter, and catalog items:
 
 ```bash
 npx tsx scripts/seed-firestore.ts
 ```
 
 ### 4. Run Locally
-Launch both frontend (Vite port 5173) and backend (Express port 8080) concurrently:
+Launch frontend (Vite port 5173) and backend (Express port 8080) concurrently:
 
 ```bash
 npm run dev
 ```
 
-Visit **`http://localhost:5173`** in your browser.
+Open **`http://localhost:5173`** in your browser.
 
 ---
 
-## 🧪 Simulation & Testing Guide
+## 🧪 Interactive Testing Guide
 
-Once inside the dashboard, simulate the 4 primary scenarios in the **AI Buyer** chat:
+In the **AI Buyer** simulator, test all 4 outcomes and advanced features:
 
-1. **Approved Purchase:**
-   > *"Buy me wireless bluetooth earbuds under 2000"*  
+1. **🟢 Approved Purchase:**
+   > *"Buy wireless bluetooth earbuds under 2000"*  
    - Matches: *Wireless Bluetooth Earbuds (₹1,499)*
-   - Result: Passes all limits &rarr; Creates Razorpay Order &rarr; Shows **Confirmation Card** with Order ID.
+   - Result: Passes all limits ➔ Creates Razorpay Order (`order_...`) ➔ Logs to Verdict Chain.
 
-2. **Recovery Trigger:**
+2. **🟡 Smart Recovery:**
    > *"Buy noise cancelling headphones for 7999"*  
    - Matches: *Noise Cancelling Headphones (₹7,999)*
-   - Result: Exceeds per-order cap (₹4,000) &rarr; Queries catalog &rarr; Offers *Smart Fitness Watch (₹2,999)* with **Accept** and **Decline** options.
+   - Result: Exceeds per-order cap (₹4,000) ➔ Searches catalog ➔ Offers *Smart Fitness Watch (₹2,999)* with **Accept** and **Decline** options.
 
-3. **Escalation & Live Approval:**
+3. **🟠 Escalation & 1-Tap Queue Approval:**
    > *"Buy non-stick cookware set for 3499"*  
    - Matches: *Non-Stick Cookware Set (₹3,499)*
-   - Result: Above approval threshold (₹3,000) &rarr; Routes to **Approval Queue**.
-   - Action: Switch to the **Approval Queue** tab and click **Approve**. Watch the card animate out and see the AI Buyer chat update live without refresh!
+   - Result: Above approval threshold (₹3,000) ➔ Escalate to **Approval Queue**.
+   - Action: Switch to the **Approval Queue** tab and click **Approve**. Watch the optimistic UI update instantly and see the AI Buyer chat resolve live!
 
-4. **Hard Block:**
+4. **🔴 Hard Policy Block:**
    > *"Buy luxury diamonds in Luxury category"*  
-   - Result: Category unapproved or non-existent in catalog &rarr; Shows **Blocked Card** with clear violation reason.
+   - Result: Category unapproved ➔ Blocked with immutable plain-language reason.
 
-5. **Verify Hash Chain:**
-   - Navigate to the **Audit Trail** tab.
-   - Click **Verify chain**.
-   - Observe the real cryptographic SHA-256 verification of every block from genesis root.
+5. **🔍 Verify Cryptographic Hash Chain:**
+   - Navigate to the **Verdict Chain** tab and click **Verify chain**.
+   - The browser recalculates every SHA-256 block hash from genesis root to confirm zero tampering.
+
+6. **💡 Test Policy Advisor:**
+   - Go to **Firewall Rules** ➔ Click **Open Policy Advisor**.
+   - View 3 calibrated strategies (Conservative, Balanced, Growth) computed directly from real catalog prices and transaction statistics.
 
 ---
 
-## 👥 Contributors & License
+## 👨‍💻 Meet the Developer
 
-- **Author:** Kishore ([@KISHORE0709-LEO](https://github.com/KISHORE0709-LEO))
-- **Event:** Razorpay AI Growth & Agentic Commerce Hackathon
-- **License:** MIT License
+<div align="center">
 
-*Disclaimer: Built strictly for demonstration and hackathon evaluation. Test-mode payment tokens and sandbox environments are utilized; no real financial settlement is executed.*
+### **M KISHORE**
+**Full-Stack & AI Systems Developer**
+
+Passionate about building resilient, high-performance web applications with Next.js, TypeScript, React, and modern cloud databases.
+
+[![GitHub](https://img.shields.io/badge/GitHub-KISHORE0709--LEO-181717?style=flat-square&logo=github)](https://github.com/KISHORE0709-LEO)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0A66C2?style=flat-square&logo=linkedin)](https://linkedin.com)
+[![Repository](https://img.shields.io/badge/Repository-SentryPay-0D94FB?style=flat-square&logo=git)](https://github.com/KISHORE0709-LEO/razorpay-agent-gateway)
+
+```
+Tech Stack: Next.js 16 • TypeScript • React • Firebase Firestore • TailwindCSS • Node.js • Razorpay SDK
+```
+
+</div>
+
+---
+
+## 📄 License
+
+Built with ❤️ by M Kishore for the **Razorpay AI Growth & Agentic Commerce Hackathon**.  
+Licensed under the [MIT License](LICENSE).
