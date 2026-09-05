@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { TrustTier, AgentTrustProfile } from "@/lib/types";
@@ -99,7 +99,7 @@ export function AgentTrustBadge({
       className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px] font-medium transition-colors ${styles.badge} ${className}`}
       title={`Agent Trust Score: ${score}/100 (${styles.label})`}
     >
-      <span className={`h-1.5 w-1.5 rounded-full ring-2 shrink-0 ${styles.dot}`} />
+      <Icon className="h-3 w-3 shrink-0" />
       {!compact && <span>{styles.label}</span>}
       {showScore && (
         <span className="font-mono text-[10px] font-semibold opacity-90">

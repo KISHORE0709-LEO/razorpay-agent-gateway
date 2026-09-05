@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { db } from "@/lib/firebase";
 import { doc, setDoc, onSnapshot, collection, deleteDoc, getDocFromServer } from "firebase/firestore";
 import { AnimatePresence, motion } from "framer-motion";
@@ -40,7 +40,7 @@ import { cn } from "@/lib/utils";
 import { CATEGORIES } from "@/lib/catalog";
 import { AGENT_ID, useFirewall, SubmitResult } from "@/lib/store";
 import { Decision, Product, Rules, Campaign, AuditEntry } from "@/lib/types";
-import { GENESIS_HASH, computeTxnHash, computeEntryHash, shortHash } from "@/lib/hash";
+import { GENESIS_HASH, computeEntryHash, shortHash } from "@/lib/hash";
 import { AgentTrustBadge } from "@/components/AgentTrustBadge";
 import { OverviewCharts } from "@/components/OverviewCharts";
 import {
@@ -490,7 +490,7 @@ function StatDrillDownModal({
   onClose: () => void;
   onNavigateToAudit?: (filter?: string) => void;
   onSelectVerdictEntry: (entry: AuditEntry, linkedOutcome?: AuditEntry) => void;
-  onResolveApproval: (id: string, decision: "approved" | "denied") => void;
+  onResolveApproval: (id: string, approve: boolean) => void;
   onOpenChat: () => void;
 }) {
   const filteredEntries = useMemo(() => {
@@ -626,13 +626,13 @@ function StatDrillDownModal({
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <button
-                        onClick={() => onResolveApproval(item.id, "approved")}
+                        onClick={() => onResolveApproval(item.id, true)}
                         className="rounded-lg bg-success px-3 py-1.5 text-xs font-semibold text-white shadow-2xs hover:brightness-105 transition cursor-pointer"
                       >
                         Approve
                       </button>
                       <button
-                        onClick={() => onResolveApproval(item.id, "denied")}
+                        onClick={() => onResolveApproval(item.id, false)}
                         className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-1.5 text-xs font-semibold text-destructive hover:bg-destructive hover:text-white transition cursor-pointer"
                       >
                         Deny
@@ -1817,7 +1817,7 @@ function BuyerChat() {
     setEditingTitle(s.title || "New chat");
   }
 
-  async function handleSaveRename(id: string, e?: React.MouseEvent | React.FormEvent) {
+  async function handleSaveRename(id: string, e?: React.SyntheticEvent) {
     if (e) e.stopPropagation();
     const trimmed = editingTitle.trim() || "Untitled chat";
     const target = sessions.find((s) => s.id === id);
@@ -1835,7 +1835,7 @@ function BuyerChat() {
     await persistSession("demo_merchant", updated);
   }
 
-  function handleCancelRename(e?: React.MouseEvent) {
+  function handleCancelRename(e?: React.SyntheticEvent) {
     if (e) e.stopPropagation();
     setEditingSessionId(null);
   }

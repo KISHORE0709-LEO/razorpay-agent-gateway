@@ -1,5 +1,5 @@
 import { db } from "./firebase";
-import { collection, doc, getDocs, getDocFromServer, setDoc, deleteDoc, query, orderBy, onSnapshot, Unsubscribe } from "firebase/firestore";
+import { collection, doc, setDoc, deleteDoc, query, orderBy, onSnapshot, Unsubscribe } from "firebase/firestore";
 import { SubmitResult } from "./store";
 
 export interface ChatMessage {

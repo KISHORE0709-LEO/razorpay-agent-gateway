@@ -9,7 +9,7 @@ import {
 } from "react";
 import { ApprovalItem, AuditEntry, Decision, Product, Rules } from "./types";
 import { db } from "./firebase";
-import { doc, query, collection, where, onSnapshot } from "firebase/firestore";
+import { doc, collection, onSnapshot } from "firebase/firestore";
 import { calculateTodayApprovedSpend } from "@shared/api";
 
 export const AGENT_ID = "agt_live_7f3c9e";
@@ -21,16 +21,6 @@ const DEFAULT_RULES: Rules = {
   approvalAbove: 2000,
   maxDiscount: 10,
 };
-
-function isToday(iso: string) {
-  const d = new Date(iso);
-  const now = new Date();
-  return (
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate()
-  );
-}
 
 export interface SubmitResult {
   decision: Decision;
