@@ -24,6 +24,24 @@ export interface AgentTrustProfile {
   updatedAt: string;
 }
 
+export interface Campaign {
+  id: string;
+  title: string;
+  suggestion: string;
+  ruleOverride: {
+    maxOrderAmount?: number;
+    approvalThreshold?: number;
+    maxDiscountPercent?: number;
+    dailySpendLimit?: number;
+  };
+  categoryTarget?: string;
+  createdAt: string;
+  expiresAt?: string;
+  status: "suggested" | "active" | "expired";
+  source: "orchestrator";
+  activatedAt?: string;
+}
+
 export interface OutcomeUpdateEntry {
   type: "outcome_update";
   relatedTransactionId: string;

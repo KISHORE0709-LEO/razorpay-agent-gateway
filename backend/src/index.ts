@@ -7,6 +7,12 @@ import { handleChat } from "./routes/chat";
 import { handleResolve } from "./routes/resolve";
 import { handleGetRules, handleSaveRules } from "./routes/rules";
 import { handleDeleteSession, handleGetSession, handleListSessions, handleSaveSession } from "./routes/sessions";
+import {
+  handleListCampaigns,
+  handleGenerateCampaigns,
+  handleActivateCampaign,
+  handleDeactivateCampaign,
+} from "./routes/campaigns";
 
 export const app = express();
 
@@ -33,6 +39,12 @@ app.get("/api/chat/sessions", handleListSessions);
 app.get("/api/chat/sessions/:sessionId", handleGetSession);
 app.post("/api/chat/sessions", handleSaveSession);
 app.delete("/api/chat/sessions/:sessionId", handleDeleteSession);
+
+// Campaign Orchestrator routes
+app.get("/api/campaigns", handleListCampaigns);
+app.post("/api/campaigns/generate", handleGenerateCampaigns);
+app.post("/api/campaigns/activate", handleActivateCampaign);
+app.post("/api/campaigns/deactivate", handleDeactivateCampaign);
 
 const PORT = process.env.PORT || 8080;
 // Only listen if not imported by node-build.ts

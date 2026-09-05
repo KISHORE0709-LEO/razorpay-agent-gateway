@@ -39,7 +39,7 @@ import {
 import { cn } from "@/lib/utils";
 import { CATEGORIES } from "@/lib/catalog";
 import { AGENT_ID, useFirewall, SubmitResult } from "@/lib/store";
-import { Decision, Product, Rules } from "@/lib/types";
+import { Decision, Product, Rules, Campaign } from "@/lib/types";
 import { GENESIS_HASH, computeTxnHash, computeEntryHash, shortHash } from "@/lib/hash";
 import { AgentTrustBadge } from "@/components/AgentTrustBadge";
 import { OverviewCharts } from "@/components/OverviewCharts";
@@ -58,6 +58,7 @@ const NAV = [
   { id: "catalog", label: "Catalog", icon: Package },
   { id: "chat", label: "AI Buyer", icon: Bot },
   { id: "approvals", label: "Approval Queue", icon: Clock3 },
+  { id: "campaigns", label: "Campaigns", icon: Sparkles },
   { id: "audit", label: "Verdict Chain", icon: Activity },
 ] as const;
 type Tab = (typeof NAV)[number]["id"];
@@ -105,7 +106,7 @@ export default function Dashboard() {
       </aside>
       <div className={cn("min-w-0 flex-1 transition-[padding] duration-300 ease-out flex flex-col h-full overflow-hidden", sidebarOpen ? "pl-72" : "pl-0")}>
         <header className="flex h-16 sm:h-20 shrink-0 items-center justify-between border-b border-border bg-card px-5 sm:px-8">
-          <div className="flex items-center gap-3"><div className="flex items-center gap-1"><button onClick={() => setSidebarOpen((open) => !open)} className="rounded-lg p-2 text-muted-foreground transition hover:bg-muted hover:text-brand-navy" title={sidebarOpen ? "Close sidebar" : "Open sidebar"}><Menu className="h-4 w-4" /></button></div><div><h1 className="text-lg font-semibold capitalize">{tab === "chat" ? "AI Buyer" : tab === "rules" ? "Firewall Rules" : tab === "catalog" ? "Product Catalog" : tab === "audit" ? "Verdict Chain" : tab === "approvals" ? "Approval Queue" : "Overview"}</h1></div></div>
+          <div className="flex items-center gap-3"><div className="flex items-center gap-1"><button onClick={() => setSidebarOpen((open) => !open)} className="rounded-lg p-2 text-muted-foreground transition hover:bg-muted hover:text-brand-navy" title={sidebarOpen ? "Close sidebar" : "Open sidebar"}><Menu className="h-4 w-4" /></button></div><div><h1 className="text-lg font-semibold capitalize">{tab === "chat" ? "AI Buyer" : tab === "rules" ? "Firewall Rules" : tab === "catalog" ? "Product Catalog" : tab === "campaigns" ? "Growth Campaigns" : tab === "audit" ? "Verdict Chain" : tab === "approvals" ? "Approval Queue" : "Overview"}</h1></div></div>
           <div className="flex items-center gap-3"><div className="hidden items-center gap-2 rounded-full border border-success/20 bg-success/10 px-3 py-1.5 text-xs font-medium text-success sm:flex"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-success" />System operational</div><div className="h-8 w-8 rounded-full bg-brand-blue/10 text-center text-xs leading-8 font-semibold text-brand-navy">{merchantEmail?.[0]?.toUpperCase() ?? "M"}</div></div>
         </header>
         <main className={cn("mx-auto w-full max-w-[1500px] flex-1 min-h-0", tab === "chat" ? "p-3 sm:p-4 lg:p-5 flex flex-col overflow-hidden" : "p-5 sm:p-8 overflow-y-auto")}>
@@ -114,6 +115,7 @@ export default function Dashboard() {
           {tab === "rules" && <RulesPanel />}
           {tab === "catalog" && <CatalogPanel />}
           {tab === "approvals" && <ApprovalsPanel />}
+          {tab === "campaigns" && <CampaignsPanel />}
           {tab === "audit" && <AuditPanel />}
         </main>
       </div>
@@ -1463,6 +1465,76 @@ function BuyerChat() {
     persistSession("demo_merchant", updatedSession);
   }
 
+  async function acceptEnhance(result: SubmitResult) {
+    if (!result.enhancedProduct || !activeSession) return;
+    setLoading(true);
+    try {
+      const next = await submitRequest(result.enhancedProduct, false, true, false);
+      const now = new Date().toISOString();
+      const userAcceptMsg: ChatMessage = {
+        id: `msg_${Date.now()}_user`,
+        role: "user",
+        content: `Upgrade my order to ${result.enhancedProduct.name} for ₹${result.enhancedProduct.price.toLocaleString("en-IN")}`,
+        timestamp: now,
+      };
+      const agentOutcomeMsg: ChatMessage = {
+        id: `msg_${Date.now() + 1}_agent`,
+        role: "agent",
+        content: `Upgraded order evaluated and processed through firewall policy.`,
+        timestamp: new Date().toISOString(),
+        transactionId: next.transactionId,
+        result: next,
+      };
+
+      const updatedSession: ChatSession = {
+        ...activeSession,
+        updatedAt: new Date().toISOString(),
+        messages: [...activeSession.messages, userAcceptMsg, agentOutcomeMsg],
+      };
+
+      setSessions((prev) => prev.map((s) => (s.id === updatedSession.id ? updatedSession : s)));
+      await persistSession("demo_merchant", updatedSession);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function declineEnhance(result: SubmitResult) {
+    if (!activeSession) return;
+    const originalProd = result.parsedProduct;
+    if (!originalProd) return;
+    setLoading(true);
+    try {
+      const next = await submitRequest(originalProd, false, false, true);
+      const now = new Date().toISOString();
+      const userDeclineMsg: ChatMessage = {
+        id: `msg_${Date.now()}_user`,
+        role: "user",
+        content: `Proceed with original order: ${originalProd.name} for ₹${originalProd.price.toLocaleString("en-IN")}`,
+        timestamp: now,
+      };
+      const agentOutcomeMsg: ChatMessage = {
+        id: `msg_${Date.now() + 1}_agent`,
+        role: "agent",
+        content: `Proceeded with original item. Evaluated and processed through firewall policy.`,
+        timestamp: new Date().toISOString(),
+        transactionId: next.transactionId,
+        result: next,
+      };
+
+      const updatedSession: ChatSession = {
+        ...activeSession,
+        updatedAt: new Date().toISOString(),
+        messages: [...activeSession.messages, userDeclineMsg, agentOutcomeMsg],
+      };
+
+      setSessions((prev) => prev.map((s) => (s.id === updatedSession.id ? updatedSession : s)));
+      await persistSession("demo_merchant", updatedSession);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const hasUserMessages = messages.some((m) => m.role === "user");
 
   return (
@@ -1686,6 +1758,8 @@ function BuyerChat() {
                               result={message.result}
                               onAccept={() => acceptAlternative(message.result!)}
                               onDecline={declineAlternative}
+                              onAcceptEnhance={() => acceptEnhance(message.result!)}
+                              onDeclineEnhance={() => declineEnhance(message.result!)}
                               onSelectSuggestion={(query) => {
                                 setText(query);
                                 inputRef.current?.focus();
@@ -1758,85 +1832,41 @@ function BuyerChat() {
                   setText(item.query);
                   inputRef.current?.focus();
                 }}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border/70 bg-card px-2.5 py-1 text-xs text-brand-navy font-medium shadow-2xs transition hover:border-brand-blue hover:bg-brand-blue/5 hover:text-brand-blue disabled:opacity-50 cursor-pointer"
+                className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border/70 bg-background px-2.5 py-1 text-[11px] font-medium text-brand-navy transition hover:border-brand-blue hover:bg-brand-blue/5 hover:text-brand-blue disabled:opacity-50 cursor-pointer"
               >
                 <span>{item.icon}</span>
-                <span>{item.label}</span>
+                <span>{item.query}</span>
               </button>
             ))}
           </div>
 
-          {/* Redesigned Studio Chatbox Input */}
-          <div className="border-t border-border/60 bg-card/80 p-3 sm:p-3.5 backdrop-blur-md shrink-0">
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                sendPrompt();
-              }}
-              className="relative"
-            >
-              <div className="relative rounded-2xl border border-border/80 bg-background/90 shadow-sm transition-all duration-200 focus-within:border-brand-blue/60 focus-within:ring-4 focus-within:ring-brand-blue/10 focus-within:shadow-md">
-                <textarea
-                  ref={inputRef}
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  rows={1}
-                  placeholder="Ask AI Buyer to purchase anything (e.g. 'Buy wireless earbuds under 2000')..."
-                  className="min-h-[44px] max-h-[140px] w-full resize-none bg-transparent px-4 pt-3 pb-2 text-sm text-foreground placeholder:text-muted-foreground/60 outline-none leading-relaxed"
-                />
-
-                <div className="flex items-center justify-between px-3 pb-2.5 pt-1 border-t border-border/30">
-                  <div className="flex items-center gap-2">
-                    <div className="flex items-center gap-1.5 rounded-full bg-brand-blue/10 px-2.5 py-0.5 text-[10px] font-semibold text-brand-blue">
-                      <Zap className="h-3 w-3" />
-                      <span>Autonomous Mode</span>
-                    </div>
-                    {text.trim().length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setText("");
-                          inputRef.current?.focus();
-                        }}
-                        className="text-[11px] text-muted-foreground hover:text-foreground transition px-1.5 py-0.5 rounded cursor-pointer"
-                      >
-                        Clear
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <div className="hidden sm:flex items-center gap-1 text-[10px] text-muted-foreground font-mono">
-                      <span>Press</span>
-                      <kbd className="rounded border border-border bg-muted/70 px-1.5 py-0.5 text-[9px] font-mono shadow-2xs">Enter ↵</kbd>
-                    </div>
-                    <button
-                      type="submit"
-                      disabled={!text.trim() || loading}
-                      className={cn(
-                        "flex h-8 items-center justify-center gap-1.5 rounded-xl px-3 text-xs font-semibold transition-all duration-150 shadow-xs",
-                        text.trim() && !loading
-                          ? "bg-gradient-to-r from-brand-blue to-blue-600 text-white hover:brightness-110 hover:shadow-md hover:shadow-brand-blue/25 active:scale-95 cursor-pointer"
-                          : "bg-muted text-muted-foreground/50 cursor-not-allowed opacity-60"
-                      )}
-                    >
-                      <span>Send request</span>
-                      <ArrowUp className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </div>
+          {/* Chat Input Bar */}
+          <form onSubmit={(e) => { e.preventDefault(); sendPrompt(); }} className="border-t border-border bg-card p-3 sm:p-4 shrink-0">
+            <div className="relative flex items-end rounded-xl border border-border/80 bg-background shadow-2xs focus-within:border-brand-blue focus-within:ring-2 focus-within:ring-brand-blue/15 transition">
+              <textarea
+                ref={inputRef}
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={handleKeyDown}
+                rows={1}
+                placeholder="Message AI Buyer (e.g. 'I want to buy the Pro Wireless Earbuds for ₹2,499')..."
+                className="w-full resize-none bg-transparent px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none max-h-32 min-h-[44px]"
+              />
+              <div className="flex items-center gap-1 p-2 shrink-0">
+                <button
+                  type="submit"
+                  disabled={!text.trim() || loading}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-blue text-white transition hover:bg-brand-blue/90 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-xs"
+                >
+                  <ArrowUp className="h-4 w-4" />
+                </button>
               </div>
-
-              <div className="mt-2 flex items-center justify-between px-1 text-[11px] text-muted-foreground/70">
-                <div className="flex items-center gap-1.5">
-                  <ShieldCheck className="h-3.5 w-3.5 text-brand-blue" />
-                  <span>Razorpay Orders API • Real-time firewall policy verification</span>
-                </div>
-                <span className="hidden sm:inline font-mono text-[10px]">Groq Llama 3.3 70B</span>
-              </div>
-            </form>
-          </div>
+            </div>
+            <div className="mt-2 flex items-center justify-between px-1 text-[11px] text-muted-foreground">
+              <span>Press Enter to send, Shift+Enter for new line</span>
+              <span className="hidden sm:inline font-mono text-[10px]">Connected to Razorpay Test Gateway</span>
+            </div>
+          </form>
         </div>
       </div>
     </div>
@@ -1847,11 +1877,15 @@ function DecisionCard({
   result, 
   onAccept, 
   onDecline,
+  onAcceptEnhance,
+  onDeclineEnhance,
   onSelectSuggestion
 }: { 
   result: SubmitResult; 
   onAccept: () => void; 
   onDecline: () => void; 
+  onAcceptEnhance?: () => void;
+  onDeclineEnhance?: () => void;
   onSelectSuggestion?: (query: string) => void;
 }) { 
   if (result.decision === "conversational") {
@@ -1911,6 +1945,7 @@ function DecisionCard({
   const config = ({ 
     approved: ["Approved", "text-success", "bg-success/10 border-success/30", CheckCircle2], 
     recovered: ["Recovery offer", "text-brand-blue", "bg-brand-blue/10 border-brand-blue/30", RefreshCw], 
+    enhanced: ["Enhance offer", "text-indigo-600 dark:text-indigo-400", "bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800", Sparkles],
     escalated: ["Pending approval", "text-warning", "bg-warning/10 border-warning/30", Clock3], 
     blocked: ["Blocked", "text-destructive", "bg-destructive/10 border-destructive/30", Ban] 
   } as const)[result.decision]; 
@@ -2057,6 +2092,65 @@ function DecisionCard({
               className="rounded-lg bg-brand-blue px-3.5 py-1.5 text-xs font-semibold text-white transition hover:brightness-110"
             >
               Accept Alternative
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Outcome: Enhance offer card (Upsell/Cross-sell) with Accept and Decline */}
+      {result.decision === "enhanced" && result.enhancedProduct && (
+        <div className="mt-3 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-card p-3.5 shadow-sm">
+          <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-border">
+            <div className="flex items-center gap-2">
+              <span className="flex h-2 w-2 rounded-full bg-indigo-500 animate-pulse" />
+              <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 tracking-tight">
+                {result.enhancedProduct.category === result.parsedProduct?.category ? "Upsell Recommendation" : "Complementary Cross-Sell"}
+              </span>
+            </div>
+            <span className="rounded-full bg-indigo-100 dark:bg-indigo-900/50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 dark:text-indigo-300">
+              Within Policy Cap
+            </span>
+          </div>
+
+          <div className="mt-3 flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <img 
+                src={result.enhancedProduct.imageUrl || `https://picsum.photos/seed/${result.enhancedProduct.id}/300/300`}
+                alt={result.enhancedProduct.name}
+                className="h-12 w-12 rounded-lg object-cover border border-border shrink-0 shadow-2xs"
+                onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+              />
+              <div className="min-w-0">
+                <div className="text-xs font-semibold text-brand-navy truncate">{result.enhancedProduct.name}</div>
+                <div className="mt-0.5 flex items-center gap-2">
+                  <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                    ₹{result.enhancedProduct.price.toLocaleString("en-IN")}
+                  </span>
+                  {result.parsedProduct && (
+                    <span className="font-mono text-[11px] text-muted-foreground line-through">
+                      ₹{result.parsedProduct.price.toLocaleString("en-IN")}
+                    </span>
+                  )}
+                </div>
+                <div className="mt-1 text-[10px] text-muted-foreground">
+                  Category: <span className="font-medium text-foreground">{result.enhancedProduct.category}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-3 flex items-center justify-end gap-2 border-t border-border pt-2.5">
+            <button 
+              onClick={onDeclineEnhance || onDecline} 
+              className="rounded-lg border border-muted-foreground/30 px-3 py-1.5 text-xs font-semibold text-muted-foreground transition hover:bg-muted cursor-pointer"
+            >
+              Keep original ({result.parsedProduct?.name ? `₹${result.parsedProduct.price.toLocaleString("en-IN")}` : "proceed"})
+            </button>
+            <button 
+              onClick={onAcceptEnhance || onAccept} 
+              className="rounded-lg bg-indigo-600 px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-700 shadow-xs cursor-pointer"
+            >
+              Upgrade my order (₹{result.enhancedProduct.price.toLocaleString("en-IN")})
             </button>
           </div>
         </div>
@@ -2365,6 +2459,7 @@ function VerdictDetailModal({
     blocked: ["Blocked", "text-destructive", "bg-destructive/10", "border-destructive", Ban],
     escalated: ["Escalated", "text-warning", "bg-warning/10", "border-warning", Clock3],
     recovered: ["Recovered", "text-brand-blue", "bg-brand-blue/10", "border-brand-blue", RefreshCw],
+    enhanced: ["Enhanced", "text-indigo-600 dark:text-indigo-400", "bg-indigo-50 dark:bg-indigo-950/40", "border-indigo-400", Sparkles],
   };
   const [label, textCol, bgCol, , Icon] = (config as Record<string, any>)[entry.decision] || [
     "Unknown",
@@ -2448,6 +2543,34 @@ function VerdictDetailModal({
             </div>
           </div>
         </div>
+
+        {/* Campaign Applied info (if influenced by active campaign) */}
+        {entry.campaignApplied && (
+          <div className="rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-950/20 p-3.5 flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+              <span className="font-semibold text-brand-navy">Active Campaign Applied:</span>
+              <span className="font-medium text-indigo-600 dark:text-indigo-400">{entry.campaignApplied}</span>
+            </div>
+            <span className="rounded bg-indigo-100 dark:bg-indigo-900/60 px-2 py-0.5 text-[10px] font-bold text-indigo-700 dark:text-indigo-300">
+              ORCHESTRATOR
+            </span>
+          </div>
+        )}
+
+        {/* Enhanced Product info (if upsell/cross-sell offer) */}
+        {entry.enhancedProduct && (
+          <div className="rounded-xl border border-indigo-200 dark:border-indigo-800 bg-card p-3.5 space-y-1.5">
+            <div className="flex items-center gap-2 text-xs font-semibold text-indigo-600 dark:text-indigo-400">
+              <Sparkles className="h-3.5 w-3.5" />
+              <span>Enhanced Offer Item</span>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-medium text-brand-navy">{entry.enhancedProduct.name} ({entry.enhancedProduct.category})</span>
+              <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">₹{entry.enhancedProduct.price.toLocaleString("en-IN")}</span>
+            </div>
+          </div>
+        )}
 
         {/* Full Reason Text */}
         <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-1.5">
@@ -2587,6 +2710,7 @@ function VerdictChainRow({
     blocked: ["Blocked", "text-destructive", "bg-destructive/10", Ban, "border-destructive"],
     escalated: ["Escalated", "text-warning", "bg-warning/10", Clock3, "border-warning"],
     recovered: ["Recovered", "text-brand-blue", "bg-brand-blue/10", RefreshCw, "border-brand-blue"],
+    enhanced: ["Enhanced", "text-indigo-600 dark:text-indigo-400", "bg-indigo-50 dark:bg-indigo-950/40", Sparkles, "border-indigo-400"],
   };
   const itemConfig =
     (config as Record<string, any>)[entry.decision] || [
@@ -2651,6 +2775,12 @@ function VerdictChainRow({
               {entry.orderId && (
                 <span className="rounded bg-success/10 text-success px-2 py-1">order: {entry.orderId}</span>
               )}
+              {entry.campaignApplied && (
+                <span className="inline-flex items-center gap-1 rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 px-2 py-1 font-medium">
+                  <Sparkles className="h-3 w-3" />
+                  <span>campaign: {entry.campaignApplied}</span>
+                </span>
+              )}
             </div>
           )}
 
@@ -2695,6 +2825,409 @@ function VerdictChainRow({
 
 // Retain AuditRow alias for backwards compatibility in Overview panel
 const AuditRow = VerdictChainRow;
+
+function CampaignsPanel() {
+  const { rules } = useFirewall();
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [activatingId, setActivatingId] = useState<string | null>(null);
+  const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
+
+  // Subscribe to real-time campaigns in Firestore
+  useEffect(() => {
+    const q = collection(db, "merchants/demo_merchant/campaigns");
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const list: Campaign[] = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Campaign));
+        // Sort: active first, then suggested, then expired
+        list.sort((a, b) => {
+          const order = { active: 0, suggested: 1, expired: 2 };
+          return (order[a.status] ?? 3) - (order[b.status] ?? 3);
+        });
+        setCampaigns(list);
+      },
+      (err) => console.error("Campaigns listener error:", err)
+    );
+    return () => unsub();
+  }, []);
+
+  // Fetch or trigger suggestions on first load if none exist
+  useEffect(() => {
+    fetchCampaigns();
+  }, []);
+
+  async function fetchCampaigns() {
+    try {
+      const res = await fetch("/api/campaigns?merchantId=demo_merchant");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.campaigns) {
+          setCampaigns(data.campaigns);
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching campaigns:", err);
+    }
+  }
+
+  async function runOrchestrator() {
+    setLoading(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/campaigns/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ merchantId: "demo_merchant" }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMessage({ text: `Orchestrator generated ${data.campaigns?.length || 0} smart campaigns based on 7-day transaction history & agent trust telemetry.`, type: "success" });
+        if (data.campaigns) setCampaigns(data.campaigns);
+      } else {
+        setMessage({ text: data.error || "Failed to generate suggestions", type: "error" });
+      }
+    } catch (err) {
+      setMessage({ text: "Error running campaign orchestrator", type: "error" });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleActivate(campaignId: string) {
+    setActivatingId(campaignId);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/campaigns/activate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ merchantId: "demo_merchant", campaignId, durationHours: 48 }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMessage({ text: "Campaign activated for 48 hours! Override is now active in firewall evaluation.", type: "success" });
+      } else {
+        setMessage({ text: data.error || "Activation failed", type: "error" });
+      }
+    } catch (err) {
+      setMessage({ text: "Error activating campaign", type: "error" });
+    } finally {
+      setActivatingId(null);
+    }
+  }
+
+  async function handleDeactivate(campaignId: string) {
+    setMessage(null);
+    try {
+      const res = await fetch("/api/campaigns/deactivate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ merchantId: "demo_merchant", campaignId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMessage({ text: "Campaign deactivated.", type: "success" });
+      } else {
+        setMessage({ text: data.error || "Deactivation failed", type: "error" });
+      }
+    } catch (err) {
+      setMessage({ text: "Error deactivating campaign", type: "error" });
+    }
+  }
+
+  const activeCampaigns = campaigns.filter((c) => c.status === "active");
+  const suggestedCampaigns = campaigns.filter((c) => c.status === "suggested");
+  const expiredCampaigns = campaigns.filter((c) => c.status === "expired");
+
+  return (
+    <div className="space-y-7">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="flex h-2 w-2 rounded-full bg-brand-blue animate-pulse" />
+            <span className="text-xs font-semibold uppercase tracking-wider text-brand-blue">
+              Autonomous Growth Engine
+            </span>
+          </div>
+          <h2 className="mt-1 text-2xl font-bold tracking-tight text-brand-navy">Campaign Orchestrator</h2>
+          <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+            Generates targeted rule overrides from 7-day transaction volumes & trust scores with a guaranteed 20% safety ceiling.
+          </p>
+        </div>
+
+        <button
+          onClick={runOrchestrator}
+          disabled={loading}
+          className="inline-flex items-center gap-2 rounded-xl bg-brand-blue px-4 py-2.5 text-xs font-semibold text-white shadow-md shadow-brand-blue/20 transition hover:brightness-110 disabled:opacity-50 cursor-pointer self-start sm:self-auto"
+        >
+          <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+          <span>{loading ? "Analyzing 7-Day History..." : "Run Orchestrator"}</span>
+        </button>
+      </div>
+
+      {/* Message feedback */}
+      {message && (
+        <div
+          className={cn(
+            "rounded-xl p-3.5 text-xs font-medium border flex items-center justify-between",
+            message.type === "success"
+              ? "bg-success/10 border-success/30 text-success"
+              : "bg-destructive/10 border-destructive/30 text-destructive"
+          )}
+        >
+          <span>{message.text}</span>
+          <button onClick={() => setMessage(null)} className="ml-2 hover:opacity-70">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Safety Ceiling Guarantee Banner */}
+      <div className="rounded-2xl border border-brand-blue/20 bg-gradient-to-r from-brand-blue/[0.04] via-indigo-500/[0.03] to-transparent p-4 sm:p-5 flex items-start gap-3.5">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-blue/10 text-brand-blue mt-0.5">
+          <ShieldCheck className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h4 className="text-xs font-bold text-brand-navy uppercase tracking-wide">
+              Hard Safety Ceiling Enforced
+            </h4>
+            <span className="rounded-full bg-brand-blue/15 px-2 py-0.5 text-[10px] font-bold text-brand-blue">
+              MAX +20% CAP
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+            No campaign override can exceed 20% above your merchant base rules. Campaign rules layer directly on top of base rules during evaluation and automatically revert when expired.
+          </p>
+        </div>
+      </div>
+
+      {/* Active Campaign Section */}
+      {activeCampaigns.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-success">
+            <span className="flex h-2 w-2 rounded-full bg-success animate-pulse" />
+            <span>Active Live Campaign (influencing firewall)</span>
+          </div>
+
+          <div className="grid gap-4">
+            {activeCampaigns.map((camp) => (
+              <div
+                key={camp.id}
+                className="overflow-hidden rounded-2xl border-2 border-success/40 bg-card shadow-md shadow-success/5"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 bg-success/[0.06] px-5 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-success/20 px-2.5 py-1 text-[10px] font-bold text-success uppercase">
+                      Active Now
+                    </span>
+                    <h3 className="text-sm font-bold text-brand-navy">{camp.title}</h3>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-muted-foreground font-mono flex items-center gap-1">
+                      <Clock3 className="h-3.5 w-3.5 text-warning" />
+                      Expires: {camp.expiresAt ? new Date(camp.expiresAt).toLocaleString("en-IN") : "In 48 hours"}
+                    </span>
+                    <button
+                      onClick={() => handleDeactivate(camp.id)}
+                      className="rounded-lg border border-destructive/30 bg-destructive/10 px-2.5 py-1 text-xs font-semibold text-destructive hover:bg-destructive hover:text-white transition cursor-pointer"
+                    >
+                      Deactivate
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-5 space-y-4">
+                  <p className="text-sm text-brand-navy leading-relaxed">{camp.suggestion}</p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {camp.ruleOverride.maxOrderAmount && (
+                      <div className="rounded-xl border border-border bg-background p-3">
+                        <span className="text-[10px] text-muted-foreground font-medium uppercase">Max Order Cap</span>
+                        <div className="mt-1 flex items-baseline gap-2">
+                          <span className="text-lg font-bold font-mono text-success">
+                            ₹{camp.ruleOverride.maxOrderAmount.toLocaleString("en-IN")}
+                          </span>
+                          <span className="text-xs text-muted-foreground line-through font-mono">
+                            ₹{rules.maxOrder.toLocaleString("en-IN")}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-brand-blue font-medium">
+                          +{Math.round(((camp.ruleOverride.maxOrderAmount - rules.maxOrder) / rules.maxOrder) * 100)}% boost
+                        </span>
+                      </div>
+                    )}
+
+                    {camp.ruleOverride.maxDiscountPercent && (
+                      <div className="rounded-xl border border-border bg-background p-3">
+                        <span className="text-[10px] text-muted-foreground font-medium uppercase">Max Discount Cap</span>
+                        <div className="mt-1 flex items-baseline gap-2">
+                          <span className="text-lg font-bold font-mono text-success">
+                            {camp.ruleOverride.maxDiscountPercent}%
+                          </span>
+                          <span className="text-xs text-muted-foreground line-through font-mono">
+                            {rules.maxDiscount}%
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-brand-blue font-medium">
+                          +{camp.ruleOverride.maxDiscountPercent - rules.maxDiscount}% allowance
+                        </span>
+                      </div>
+                    )}
+
+                    {camp.ruleOverride.approvalThreshold && (
+                      <div className="rounded-xl border border-border bg-background p-3">
+                        <span className="text-[10px] text-muted-foreground font-medium uppercase">Approval Threshold</span>
+                        <div className="mt-1 flex items-baseline gap-2">
+                          <span className="text-lg font-bold font-mono text-success">
+                            ₹{camp.ruleOverride.approvalThreshold.toLocaleString("en-IN")}
+                          </span>
+                          <span className="text-xs text-muted-foreground line-through font-mono">
+                            ₹{rules.approvalAbove.toLocaleString("en-IN")}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-brand-blue font-medium">Auto-approve range expanded</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Suggested Campaigns */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-brand-navy">
+            <Sparkles className="h-4 w-4 text-brand-blue" />
+            <span>AI Campaign Suggestions ({suggestedCampaigns.length})</span>
+          </div>
+        </div>
+
+        {suggestedCampaigns.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-border bg-card p-8 text-center">
+            <Sparkles className="mx-auto h-8 w-8 text-brand-blue/50" />
+            <h4 className="mt-2 text-sm font-semibold text-brand-navy">No suggested campaigns yet</h4>
+            <p className="mt-1 text-xs text-muted-foreground max-w-sm mx-auto">
+              Click "Run Orchestrator" above to analyze your transactions and generate high-conversion growth campaigns within policy safety ceilings.
+            </p>
+            <button
+              onClick={runOrchestrator}
+              disabled={loading}
+              className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-brand-blue/10 px-3 py-1.5 text-xs font-semibold text-brand-blue hover:bg-brand-blue hover:text-white transition cursor-pointer"
+            >
+              <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+              <span>Generate Suggestions Now</span>
+            </button>
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {suggestedCampaigns.map((camp) => (
+              <div
+                key={camp.id}
+                className="flex flex-col justify-between rounded-2xl border border-border/80 bg-card p-5 shadow-xs hover:border-brand-blue/40 hover:shadow-md transition"
+              >
+                <div>
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="rounded-full bg-brand-blue/10 px-2.5 py-0.5 text-[10px] font-semibold text-brand-blue">
+                      {camp.categoryTarget || "All Categories"}
+                    </span>
+                    <span className="text-[10px] font-mono text-muted-foreground">
+                      Source: {camp.source}
+                    </span>
+                  </div>
+
+                  <h4 className="mt-2.5 text-sm font-bold text-brand-navy">{camp.title}</h4>
+                  <p className="mt-1 text-xs text-muted-foreground leading-relaxed">{camp.suggestion}</p>
+
+                  <div className="mt-4 rounded-xl bg-muted/40 p-3 space-y-1.5 text-xs">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Proposed Override
+                    </span>
+                    {camp.ruleOverride.maxOrderAmount && (
+                      <div className="flex items-center justify-between font-mono">
+                        <span className="text-muted-foreground">Max Order Cap:</span>
+                        <span className="font-bold text-brand-navy">
+                          ₹{camp.ruleOverride.maxOrderAmount.toLocaleString("en-IN")}{" "}
+                          <span className="text-[10px] text-brand-blue font-normal">(Base: ₹{rules.maxOrder})</span>
+                        </span>
+                      </div>
+                    )}
+                    {camp.ruleOverride.maxDiscountPercent && (
+                      <div className="flex items-center justify-between font-mono">
+                        <span className="text-muted-foreground">Max Discount:</span>
+                        <span className="font-bold text-brand-navy">
+                          {camp.ruleOverride.maxDiscountPercent}%{" "}
+                          <span className="text-[10px] text-brand-blue font-normal">(Base: {rules.maxDiscount}%)</span>
+                        </span>
+                      </div>
+                    )}
+                    {camp.ruleOverride.approvalThreshold && (
+                      <div className="flex items-center justify-between font-mono">
+                        <span className="text-muted-foreground">Auto-approve Cap:</span>
+                        <span className="font-bold text-brand-navy">
+                          ₹{camp.ruleOverride.approvalThreshold.toLocaleString("en-IN")}{" "}
+                          <span className="text-[10px] text-brand-blue font-normal">(Base: ₹{rules.approvalAbove})</span>
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-5 pt-3 border-t border-border flex items-center justify-between">
+                  <span className="text-[10px] text-muted-foreground font-mono">Duration: 48 hours</span>
+                  <button
+                    onClick={() => handleActivate(camp.id)}
+                    disabled={activatingId === camp.id}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-brand-blue px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:brightness-110 transition disabled:opacity-50 cursor-pointer"
+                  >
+                    {activatingId === camp.id ? (
+                      <>
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        <span>Activating...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="h-3.5 w-3.5" />
+                        <span>Activate</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Expired / Historical Section */}
+      {expiredCampaigns.length > 0 && (
+        <div className="space-y-3">
+          <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            Past Expired Campaigns ({expiredCampaigns.length})
+          </div>
+          <div className="divide-y divide-border rounded-xl border border-border bg-card">
+            {expiredCampaigns.map((camp) => (
+              <div key={camp.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                <div>
+                  <div className="font-semibold text-brand-navy">{camp.title}</div>
+                  <div className="text-muted-foreground text-[11px]">{camp.suggestion}</div>
+                </div>
+                <span className="rounded bg-muted px-2 py-0.5 text-[10px] font-mono text-muted-foreground self-start sm:self-auto">
+                  Expired on {camp.expiresAt ? new Date(camp.expiresAt).toLocaleDateString("en-IN") : "Past"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function EmptyState({
   icon: Icon,

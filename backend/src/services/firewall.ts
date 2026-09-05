@@ -9,8 +9,16 @@ import {
   updateAgentTrustOnTransaction,
 } from "./agentTrust";
 import { calculateTodayApprovedSpend } from "@shared/api";
+import { getActiveCampaign, applyCampaignOverride } from "./campaigns";
 
 export const GENESIS_HASH = "0000000000000000000000000000000000000000000000000000000000000000";
+
+export const COMPLEMENTARY_CATEGORIES: Record<string, string[]> = {
+  "Electronics": ["Electronics", "Fashion", "Accessories"],
+  "Fashion": ["Fashion", "Electronics", "Accessories"],
+  "Home & Kitchen": ["Home & Kitchen", "Groceries"],
+  "Groceries": ["Groceries", "Home & Kitchen"],
+};
 
 export async function getMerchantTodayApprovedSpend(merchantId: string): Promise<number> {
   const txnsRef = collection(db, `merchants/${merchantId}/transactions`);
@@ -68,16 +76,19 @@ export async function evaluatePurchaseRequest(
   productId: string, 
   requestedAmount: number,
   overrideDecision?: "approved" | "blocked",
-  isRecoveryAcceptance?: boolean
+  isRecoveryAcceptance?: boolean,
+  isEnhanceAcceptance?: boolean,
+  skipEnhance?: boolean
 ) {
-  // 1. Fetch rules, product, and agent trust profile FRESH from Firestore server
+  // 1. Fetch rules, product, agent trust profile, and active campaign FRESH from Firestore server
   const rulesRef = doc(db, `merchants/${merchantId}/rules/current`);
   const productRef = doc(db, `merchants/${merchantId}/catalog/${productId}`);
   
-  const [rulesSnap, productSnap, agentTrust] = await Promise.all([
+  const [rulesSnap, productSnap, agentTrust, activeCampaign] = await Promise.all([
     getDocFromServer(rulesRef),
     getDocFromServer(productRef),
-    getAgentTrust(merchantId, agentId)
+    getAgentTrust(merchantId, agentId),
+    getActiveCampaign(merchantId),
   ]);
 
   if (!rulesSnap.exists()) {
@@ -87,8 +98,12 @@ export async function evaluatePurchaseRequest(
     throw new Error(`Product not found: ${productId}`);
   }
 
-  const rules = rulesSnap.data();
+  const baseRules = rulesSnap.data();
   const product = productSnap.data();
+
+  // Apply Campaign Orchestrator overrides on top of base rules (enforcing strict 20% safety ceiling)
+  const { effectiveRules, campaignApplied } = applyCampaignOverride(baseRules, activeCampaign);
+  const rules = effectiveRules;
 
   // Compute trust tier and adaptive effective threshold
   const trustTier = getTrustTier(agentTrust.score);
@@ -98,9 +113,10 @@ export async function evaluatePurchaseRequest(
     Number(rules.maxOrderAmount || 0)
   );
 
-  let decision: "approved" | "recovered" | "escalated" | "blocked";
+  let decision: "approved" | "recovered" | "escalated" | "blocked" | "enhanced";
   let reason: string;
   let recoveryProduct: any = undefined;
+  let enhancedProduct: any = undefined;
 
   // Real-time merchant-wide spend for today across all completed transactions
   const todaySpent = await getMerchantTodayApprovedSpend(merchantId);
@@ -108,6 +124,9 @@ export async function evaluatePurchaseRequest(
   if (overrideDecision) {
     decision = overrideDecision;
     reason = overrideDecision === "approved" ? "Approved by merchant" : "Manually denied by merchant";
+  } else if (isEnhanceAcceptance) {
+    decision = "approved";
+    reason = `Enhance offer: upgraded to ${product.name} within policy limits`;
   } else {
     // 2. Check category allow-list (HARD LIMIT - NEVER overridden by trust score)
     const allowed = Array.isArray(rules.allowedCategories)
@@ -158,7 +177,10 @@ export async function evaluatePurchaseRequest(
         reason = `Would exceed daily spend limit of ₹${rules.dailySpendLimit}`;
       } 
       // 5. Check approval threshold (ADAPTIVE - modulated by agent trust score)
-      else if (requestedAmount > effectiveThreshold) {
+      else if (
+        !(requestedAmount <= rules.maxOrderAmount && requestedAmount > baseRules.maxOrderAmount && agentTrust.score >= 30) &&
+        requestedAmount > effectiveThreshold
+      ) {
         decision = "escalated";
         if (isStrict) {
           reason = `Escalated — agent trust ${agentTrust.score} (${trustTier}), all purchases require approval`;
@@ -169,12 +191,65 @@ export async function evaluatePurchaseRequest(
       // 6. Approve (Within all limits and approval threshold)
       else {
         decision = "approved";
-        if (isRelaxed && requestedAmount > rules.approvalThreshold) {
+        if (requestedAmount > baseRules.maxOrderAmount && requestedAmount <= rules.maxOrderAmount) {
+          const expStr = activeCampaign?.expiresAt ? `, active until ${new Date(activeCampaign.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "";
+          reason = `Approved — within campaign-adjusted cap of ₹${Number(rules.maxOrderAmount).toLocaleString("en-IN")} (base ₹${Number(baseRules.maxOrderAmount).toLocaleString("en-IN")}${expStr})`;
+        } else if (requestedAmount > baseRules.approvalThreshold && requestedAmount <= rules.approvalThreshold) {
+          reason = `Approved — within campaign-adjusted approval threshold of ₹${Number(rules.approvalThreshold).toLocaleString("en-IN")} (base ₹${Number(baseRules.approvalThreshold).toLocaleString("en-IN")})`;
+        } else if (todaySpent + requestedAmount > baseRules.dailySpendLimit && todaySpent + requestedAmount <= rules.dailySpendLimit) {
+          reason = `Approved — within campaign-adjusted daily limit of ₹${Number(rules.dailySpendLimit).toLocaleString("en-IN")} (base ₹${Number(baseRules.dailySpendLimit).toLocaleString("en-IN")})`;
+        } else if (isRelaxed && requestedAmount > rules.approvalThreshold) {
           reason = `Approved — agent trust ${agentTrust.score} (${trustTier}), relaxed threshold applied (₹${effectiveThreshold})`;
         } else {
           reason = `Approved — agent trust ${agentTrust.score} (${trustTier}), within policy limits`;
         }
       }
+    }
+  }
+
+  // Feature 1: "Enhance" outcome (Upsell / Cross-sell)
+  // When a request would auto-approve AND amount is under 50% of the merchant's max order cap
+  // and user is not already accepting or declining/skipping enhance
+  if (
+    decision === "approved" &&
+    !overrideDecision &&
+    !isRecoveryAcceptance &&
+    !isEnhanceAcceptance &&
+    !skipEnhance &&
+    requestedAmount < rules.maxOrderAmount * 0.5
+  ) {
+    const catalogRef = collection(db, `merchants/${merchantId}/catalog`);
+    const catSnap = await getDocs(catalogRef);
+    const candidateList: any[] = [];
+
+    const currentCat = String(product.category || "").trim().toLowerCase();
+    const compCats = (COMPLEMENTARY_CATEGORIES[product.category] || [product.category]).map(c => c.toLowerCase());
+
+    catSnap.forEach((d) => {
+      const p = { id: d.id, ...d.data() } as any;
+      if (p.id === productId) return;
+      if (!p.price || p.price <= requestedAmount) return; // Must be priced higher
+      if (p.price > rules.maxOrderAmount) return; // Must be within max order cap
+      if (todaySpent + p.price > rules.dailySpendLimit) return; // Must be within daily spend limit
+
+      const prodCat = String(p.category || "").trim().toLowerCase();
+      if (prodCat === currentCat || compCats.includes(prodCat)) {
+        candidateList.push(p);
+      }
+    });
+
+    if (candidateList.length > 0) {
+      candidateList.sort((a, b) => {
+        // Prioritize same-category upsell, then closest higher price
+        const aSame = a.category === product.category ? 0 : 1;
+        const bSame = b.category === product.category ? 0 : 1;
+        if (aSame !== bSame) return aSame - bSame;
+        return a.price - b.price;
+      });
+
+      enhancedProduct = candidateList[0];
+      decision = "enhanced";
+      reason = `Enhance offer: upgrade to ${enhancedProduct.name} (₹${enhancedProduct.price}) within policy limits`;
     }
   }
 
@@ -190,6 +265,7 @@ export async function evaluatePurchaseRequest(
       decision = "blocked";
       reason = `Would exceed daily spend limit of ₹${rules.dailySpendLimit}`;
       recoveryProduct = undefined;
+      enhancedProduct = undefined;
     }
   }
 
@@ -236,10 +312,21 @@ export async function evaluatePurchaseRequest(
       txnData.status = "failed";
       txnData.errorReason = err.message || "Razorpay API error";
     }
-  } else if (decision === "escalated") {
+  } else if (decision === "escalated" || decision === "enhanced") {
     txnData.status = "pending";
   } else if (decision === "blocked") {
     txnData.status = "denied";
+  }
+
+  if (decision === "enhanced" && enhancedProduct) {
+    txnData.enhancedProduct = enhancedProduct.name;
+    txnData.enhancedPrice = enhancedProduct.price;
+    txnData.enhancedProductId = enhancedProduct.id;
+  }
+
+  if (campaignApplied) {
+    txnData.campaignApplied = campaignApplied.title;
+    txnData.campaignId = campaignApplied.id;
   }
 
   const hash = computeTxnHash(prevHash, txnData);
@@ -282,6 +369,8 @@ export async function evaluatePurchaseRequest(
     decision,
     reason,
     recoveryProduct,
+    enhancedProduct,
+    campaignApplied: campaignApplied?.title,
     status: txnData.status,
     orderId: txnData.orderId,
     razorpayOrderId: txnData.razorpayOrderId,

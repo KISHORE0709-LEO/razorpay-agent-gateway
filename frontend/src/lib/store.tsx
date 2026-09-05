@@ -36,6 +36,8 @@ export interface SubmitResult {
   decision: Decision;
   reason: string;
   alternative?: Product;
+  enhancedProduct?: Product;
+  campaignApplied?: string;
   entry?: AuditEntry;
   approval?: ApprovalItem;
   transactionId?: string;
@@ -63,7 +65,12 @@ export interface FirewallStore {
   dailySpent: number;
   resolveApproval: (id: string, approve: boolean) => Promise<SubmitResult | undefined>;
 
-  submitRequest: (product: Product, isRecoveryAcceptance?: boolean) => Promise<SubmitResult>;
+  submitRequest: (
+    product: Product,
+    isRecoveryAcceptance?: boolean,
+    isEnhanceAcceptance?: boolean,
+    skipEnhance?: boolean
+  ) => Promise<SubmitResult>;
   sendChatRequest: (message: string) => Promise<SubmitResult>;
 
   latestDecision: Decision | null;
@@ -174,7 +181,12 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const submitRequest = useCallback(
-    async (product: Product, isRecoveryAcceptance?: boolean): Promise<SubmitResult> => {
+    async (
+      product: Product,
+      isRecoveryAcceptance?: boolean,
+      isEnhanceAcceptance?: boolean,
+      skipEnhance?: boolean,
+    ): Promise<SubmitResult> => {
       try {
         const response = await fetch("/api/evaluate", {
           method: "POST",
@@ -185,6 +197,8 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
             productId: product.id,
             requestedAmount: product.price,
             isRecoveryAcceptance: !!isRecoveryAcceptance,
+            isEnhanceAcceptance: !!isEnhanceAcceptance,
+            skipEnhance: !!skipEnhance,
           }),
         });
         
@@ -200,10 +214,13 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
           decision: result.decision,
           reason: result.reason,
           alternative: result.recoveryProduct,
+          enhancedProduct: result.enhancedProduct,
+          campaignApplied: result.campaignApplied,
           transactionId: result.transactionId,
           orderId,
           status: result.status,
           errorReason: result.errorReason,
+          parsedProduct: product,
           entry: {
             id: result.transactionId || "",
             time: new Date().toISOString(),
@@ -218,6 +235,8 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
             status: result.status,
             agentTrustScore: result.agentTrustScore,
             agentTrustTier: result.agentTrustTier,
+            enhancedProduct: result.enhancedProduct,
+            campaignApplied: result.campaignApplied,
           },
         };
 
@@ -289,6 +308,8 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
           decision: result.decision,
           reason: result.reason,
           alternative: result.recoveryProduct,
+          enhancedProduct: result.enhancedProduct,
+          campaignApplied: result.campaignApplied,
           transactionId: result.transactionId,
           orderId,
           status: result.status,
@@ -308,6 +329,8 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
             prevHash: result.prevHash || "",
             orderId,
             status: result.status,
+            enhancedProduct: result.enhancedProduct,
+            campaignApplied: result.campaignApplied,
           } : undefined,
         };
 
