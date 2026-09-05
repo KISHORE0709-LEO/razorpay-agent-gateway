@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { db } from "@/lib/firebase";
 import { doc, setDoc, onSnapshot, collection, deleteDoc, getDocFromServer } from "firebase/firestore";
 import { AnimatePresence, motion } from "framer-motion";
@@ -115,6 +115,18 @@ export default function Dashboard() {
               const Icon = item.icon;
               return <button key={item.id} onClick={() => setTab(item.id)} className={cn("flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition", tab === item.id ? "bg-brand-blue text-white shadow-lg shadow-brand-blue/15" : "text-white/55 hover:bg-white/5 hover:text-white")}><Icon className="h-4 w-4 shrink-0" />{item.label}{item.id === "approvals" && <ApprovalCount />}</button>;
             })}
+            <div className="pt-2">
+              <Link
+                to="/how-it-works"
+                target="_blank"
+                rel="noreferrer"
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-xs text-white/50 hover:bg-white/5 hover:text-white transition"
+              >
+                <HelpCircle className="h-4 w-4 shrink-0 text-brand-blue" />
+                <span>How it works</span>
+                <ArrowUpRight className="ml-auto h-3 w-3 text-white/30" />
+              </Link>
+            </div>
           </nav>
         </div>
         <div className="mt-auto border-t border-white/10 p-4">
