@@ -10,6 +10,7 @@ import {
 import { ApprovalItem, AuditEntry, Decision, Product, Rules } from "./types";
 import { db } from "./firebase";
 import { doc, query, collection, where, onSnapshot } from "firebase/firestore";
+import { calculateTodayApprovedSpend } from "@shared/api";
 
 export const AGENT_ID = "agt_live_7f3c9e";
 
@@ -154,10 +155,7 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const dailySpent = useMemo(
-    () =>
-      auditLog
-        .filter((e) => (e.decision === "approved" || e.status === "completed") && isToday(e.time))
-        .reduce((sum, e) => sum + (e.amount || 0), 0),
+    () => calculateTodayApprovedSpend(auditLog),
     [auditLog],
   );
 
@@ -343,7 +341,10 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
           body: JSON.stringify({ transactionId: id, approve }),
         });
         if (!res.ok) {
-          console.error("Failed to resolve approval:", await res.text());
+          const errData = await res.json().catch(() => ({}));
+          const errMsg = errData.error || errData.reason || "Failed to resolve approval";
+          console.error("Failed to resolve approval:", errMsg);
+          alert(errMsg);
         }
         return undefined; // Real-time UI will update via Firestore listeners
       } catch (err) {

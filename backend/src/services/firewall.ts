@@ -8,8 +8,19 @@ import {
   computeEffectiveThreshold,
   updateAgentTrustOnTransaction,
 } from "./agentTrust";
+import { calculateTodayApprovedSpend } from "@shared/api";
 
 export const GENESIS_HASH = "0000000000000000000000000000000000000000000000000000000000000000";
+
+export async function getMerchantTodayApprovedSpend(merchantId: string): Promise<number> {
+  const txnsRef = collection(db, `merchants/${merchantId}/transactions`);
+  const snap = await getDocs(txnsRef);
+  const entries: any[] = [];
+  snap.forEach((d) => {
+    entries.push(d.data());
+  });
+  return calculateTodayApprovedSpend(entries);
+}
 
 export function computeTxnHash(
   prevHash: string,
@@ -91,17 +102,8 @@ export async function evaluatePurchaseRequest(
   let reason: string;
   let recoveryProduct: any = undefined;
 
-  const dateKey = new Date().toISOString().split("T")[0];
-  const dailySpendDocId = `${agentId}_${dateKey}`;
-  const dailySpendRef = doc(db, `merchants/${merchantId}/dailySpend/${dailySpendDocId}`);
-  const dailySpendSnap = await getDocFromServer(dailySpendRef);
-  let todaySpent = 0;
-  let todayCount = 0;
-  if (dailySpendSnap.exists()) {
-    const d = dailySpendSnap.data();
-    todaySpent = Number(d.amount || 0);
-    todayCount = Number(d.count || 0);
-  }
+  // Real-time merchant-wide spend for today across all completed transactions
+  const todaySpent = await getMerchantTodayApprovedSpend(merchantId);
 
   if (overrideDecision) {
     decision = overrideDecision;
@@ -153,7 +155,7 @@ export async function evaluatePurchaseRequest(
       // 4. Check daily spend limit (HARD LIMIT - NEVER overridden by trust score)
       if (todaySpent + requestedAmount > rules.dailySpendLimit) {
         decision = "blocked";
-        reason = `Blocked — Would exceed daily spend limit of ₹${rules.dailySpendLimit} (today: ₹${todaySpent}, requested: ₹${requestedAmount}) (agent trust ${agentTrust.score}, ${trustTier})`;
+        reason = `Would exceed daily spend limit of ₹${rules.dailySpendLimit}`;
       } 
       // 5. Check approval threshold (ADAPTIVE - modulated by agent trust score)
       else if (requestedAmount > effectiveThreshold) {
@@ -173,6 +175,21 @@ export async function evaluatePurchaseRequest(
           reason = `Approved — agent trust ${agentTrust.score} (${trustTier}), within policy limits`;
         }
       }
+    }
+  }
+
+  // Moment of Payment Check:
+  // Before approving ANY transaction (auto-approved, accepted recovery, or approved escalation),
+  // recalculate today's total approved spend for the merchant fresh from server and confirm
+  // (liveTodaySpent + requestedAmount) <= rules.dailySpendLimit.
+  // If this would exceed the limit, the result MUST be "blocked" with reason
+  // "Would exceed daily spend limit of ₹<limit>" — even if every other check passed.
+  if (decision === "approved") {
+    const liveTodaySpent = await getMerchantTodayApprovedSpend(merchantId);
+    if (liveTodaySpent + requestedAmount > Number(rules.dailySpendLimit || 0)) {
+      decision = "blocked";
+      reason = `Would exceed daily spend limit of ₹${rules.dailySpendLimit}`;
+      recoveryProduct = undefined;
     }
   }
 
@@ -237,12 +254,13 @@ export async function evaluatePurchaseRequest(
 
   // 8. Update daily spend document if approved
   if (decision === "approved") {
+    const dateKey = new Date().toISOString().split("T")[0];
+    const dailySpendRef = doc(db, `merchants/${merchantId}/dailySpend/${agentId}_${dateKey}`);
     const newSpent = todaySpent + requestedAmount;
     await setDoc(dailySpendRef, {
       agentId,
       date: dateKey,
       amount: newSpent,
-      count: todayCount + 1,
       updatedAt: new Date().toISOString(),
     }, { merge: true });
   }

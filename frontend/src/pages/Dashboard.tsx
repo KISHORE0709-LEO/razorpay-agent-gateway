@@ -131,16 +131,14 @@ function Overview({ onTab }: { onTab: (tab: Tab) => void }) {
   // Requests today: count of all transactions today
   const requestsToday = todayLog.length;
   
-  // Approved volume: sum of approved transaction amounts today
-  const approvedVolume = todayLog
-    .filter((e) => e.decision === "approved" || e.status === "completed")
-    .reduce((sum, e) => sum + (e.amount || 0), 0);
+  // Approved volume: unified real-time sum of approved transactions today
+  const approvedVolume = dailySpent;
   
   // Blocked requests: count of blocked transactions today
   const blockedToday = todayLog.filter((e) => e.decision === "blocked").length;
   
   // Daily spend progress bar
-  const dailySpendProgress = Math.min((dailySpent / rules.dailyLimit) * 100, 100);
+  const dailySpendProgress = rules.dailyLimit > 0 ? Math.min((dailySpent / rules.dailyLimit) * 100, 100) : 0;
   
   // Saved via recovery: sum of savedAmount across recovered transactions today
   const savedViaRecovery = todayLog
@@ -2104,7 +2102,7 @@ function DecisionCard({
 }
 
 function ApprovalsPanel() {
-  const { resolveApproval, approvals } = useFirewall();
+  const { resolveApproval, approvals, rules, dailySpent } = useFirewall();
 
   return (
     <div className="space-y-7">
@@ -2119,7 +2117,9 @@ function ApprovalsPanel() {
       ) : (
         <div className="grid gap-4">
           <AnimatePresence>
-            {approvals.map((item) => (
+            {approvals.map((item) => {
+              const wouldExceedLimit = rules.dailyLimit > 0 && (dailySpent + (item.amount || 0)) > rules.dailyLimit;
+              return (
               <motion.div
                 key={item.id}
                 initial={{ opacity: 0, y: 10, scale: 0.98 }}
@@ -2134,6 +2134,11 @@ function ApprovalsPanel() {
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="font-semibold text-brand-navy">{item.product}</h3>
                     <span className="rounded-full bg-warning/10 px-2 py-0.5 text-[10px] font-semibold text-warning">Approval required</span>
+                    {wouldExceedLimit && (
+                      <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-semibold text-destructive">
+                        Would exceed daily limit (₹{rules.dailyLimit.toLocaleString("en-IN")})
+                      </span>
+                    )}
                   </div>
                   <p className="mt-1 text-sm text-muted-foreground">
                     AI Agent wants to spend <span className="font-mono font-semibold text-brand-navy">₹{item.amount?.toLocaleString("en-IN")}</span>
@@ -2171,7 +2176,8 @@ function ApprovalsPanel() {
                   </button>
                 </div>
               </motion.div>
-            ))}
+              );
+            })}
           </AnimatePresence>
         </div>
       )}

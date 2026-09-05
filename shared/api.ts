@@ -43,3 +43,68 @@ export interface OutcomeUpdateEntry {
   requestedAmount?: number;
 }
 
+/**
+ * Determines if an ISO date string falls on the current local calendar day.
+ */
+export function isToday(dateStr?: string): boolean {
+  if (!dateStr) return false;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return false;
+  const now = new Date();
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  );
+}
+
+/**
+ * Calculates the exact real-time sum of today's approved spend across the ledger.
+ * This is the single source of truth for both the backend firewall spend check
+ * and the frontend Overview progress bar.
+ */
+export function calculateTodayApprovedSpend(entries: Array<{
+  type?: string;
+  decision?: string;
+  outcome?: string;
+  time?: string;
+  timestamp?: string;
+  amount?: number;
+  requestedAmount?: number;
+  status?: string;
+}>): number {
+  const now = new Date();
+  let total = 0;
+
+  for (const entry of entries) {
+    const timeVal = entry.timestamp || entry.time;
+    if (!timeVal) continue;
+    const d = new Date(timeVal);
+    if (isNaN(d.getTime())) continue;
+
+    if (
+      d.getFullYear() !== now.getFullYear() ||
+      d.getMonth() !== now.getMonth() ||
+      d.getDate() !== now.getDate()
+    ) {
+      continue;
+    }
+
+    if (entry.type === "outcome_update") {
+      if (entry.outcome === "approved") {
+        total += Number(entry.amount ?? entry.requestedAmount ?? 0);
+      }
+    } else {
+      if (
+        (entry.decision === "approved" || entry.status === "completed") &&
+        entry.status !== "failed"
+      ) {
+        total += Number(entry.amount ?? entry.requestedAmount ?? 0);
+      }
+    }
+  }
+
+  return total;
+}
+
+

@@ -14,7 +14,7 @@ import {
 } from "firebase/firestore";
 import { createRazorpayOrder } from "../services/razorpay";
 import { updateAgentTrustOnTransaction } from "../services/agentTrust";
-import { GENESIS_HASH, computeOutcomeUpdateHash } from "../services/firewall";
+import { GENESIS_HASH, computeOutcomeUpdateHash, getMerchantTodayApprovedSpend } from "../services/firewall";
 
 export const handleResolve: RequestHandler = async (req, res): Promise<any> => {
   try {
@@ -60,8 +60,28 @@ export const handleResolve: RequestHandler = async (req, res): Promise<any> => {
     let order: any = null;
 
     if (approve) {
+      const orderAmount = Number(txData.amount ?? txData.requestedAmount ?? 0);
+
+      // Re-check daily spend limit at the moment of approval
+      const rulesRef = doc(db, "merchants/demo_merchant/rules/current");
+      const rulesSnap = await getDoc(rulesRef);
+      const rules = rulesSnap.exists() ? rulesSnap.data() : null;
+      const dailySpendLimit = Number(rules?.dailySpendLimit || 0);
+
+      const liveTodaySpent = await getMerchantTodayApprovedSpend("demo_merchant");
+
+      if (dailySpendLimit > 0 && liveTodaySpent + orderAmount > dailySpendLimit) {
+        return res.status(400).json({
+          error: `Would exceed daily spend limit of ₹${dailySpendLimit}`,
+          reason: `Would exceed daily spend limit of ₹${dailySpendLimit}`,
+          blocked: true,
+          liveTodaySpent,
+          orderAmount,
+          dailySpendLimit,
+        });
+      }
+
       try {
-        const orderAmount = Number(txData.amount ?? txData.requestedAmount ?? 0);
         const orderProduct = txData.product ?? txData.productId ?? "Goods";
         order = await createRazorpayOrder(orderAmount, orderProduct);
 
