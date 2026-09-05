@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { ArrowRight, ShieldCheck, Sparkles } from "lucide-react";
 import { FirewallFlowAnimation } from "@/components/landing/FirewallFlowAnimation";
 import { HowItWorksRoadmap } from "@/components/landing/HowItWorksRoadmap";
+import { FeaturesSection } from "@/components/landing/FeaturesSection";
 
 export default function Landing() {
   return (
@@ -27,12 +28,12 @@ export default function Landing() {
           >
             How it works
           </a>
-          <Link
-            to="/security"
-            className="rounded-full px-3 py-1.5 text-xs text-white/60 transition hover:bg-white/10 hover:text-white"
+          <a
+            href="#features"
+            className="rounded-full px-3 py-1.5 text-xs text-white/60 transition hover:bg-white/10 hover:text-white cursor-pointer"
           >
-            Security
-          </Link>
+            Features
+          </a>
         </nav>
         <Link
           to="/login"
@@ -105,7 +106,12 @@ export default function Landing() {
         <HowItWorksRoadmap />
       </div>
 
-      <footer id="security" className="relative z-10 border-t border-white/10 px-6 py-8 text-center text-xs text-white/40 sm:px-10">
+      {/* Features Section */}
+      <div className="relative border-t border-white/10">
+        <FeaturesSection />
+      </div>
+
+      <footer className="relative z-10 border-t border-white/10 px-6 py-8 text-center text-xs text-white/40 sm:px-10">
         Built for AI agents that spend real money — safely.
       </footer>
     </div>

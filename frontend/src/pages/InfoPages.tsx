@@ -1,8 +1,45 @@
 import { Link } from "react-router-dom";
-import { ArrowLeft, ArrowRight, CheckCircle2, Clock3, LockKeyhole, ShieldCheck, Zap } from "lucide-react";
+import { ArrowLeft, ShieldCheck } from "lucide-react";
+import HowItWorks from "./HowItWorks";
+import { FeaturesSection } from "@/components/landing/FeaturesSection";
 
 const shell = "min-h-screen bg-brand-cadet text-white";
-function Header() { return <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6"><Link to="/" className="flex items-center gap-2 font-semibold"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-blue"><ShieldCheck className="h-4 w-4" /></span>Sentry<span className="text-brand-blue">Pay</span></Link><Link to="/login" className="rounded-full bg-brand-blue px-4 py-2 text-xs font-semibold">Enter workspace</Link></header> }
-import HowItWorks from "./HowItWorks";
+
+function Header() {
+  return (
+    <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
+      <Link to="/" className="flex items-center gap-2 font-semibold">
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-blue">
+          <ShieldCheck className="h-4 w-4 text-white" />
+        </span>
+        <span>
+          Sentry<span className="text-brand-blue">Pay</span>
+        </span>
+      </Link>
+      <Link to="/login" className="rounded-full bg-brand-blue px-4 py-2 text-xs font-semibold text-white">
+        Enter workspace
+      </Link>
+    </header>
+  );
+}
+
 export { HowItWorks };
-export function Security() { return <div className={shell}><Header /><main className="mx-auto max-w-5xl px-6 py-16"><Link to="/" className="mb-8 inline-flex items-center gap-2 text-sm text-white/50 hover:text-white"><ArrowLeft className="h-4 w-4" />Back home</Link><p className="text-sm font-medium text-brand-blue">Security by default</p><h1 className="mt-3 max-w-3xl text-4xl font-extrabold tracking-tight sm:text-6xl">Payments should be observable, not opaque.</h1><p className="mt-6 max-w-2xl text-lg leading-relaxed text-white/55">A clear verdict chain and explicit policy boundaries give your team confidence before an agent is allowed to spend.</p><div className="mt-14 grid gap-5 md:grid-cols-3">{[[LockKeyhole,"Policy first","Agents never call the payment processor directly. Every request is evaluated against the merchant’s rules."],[ShieldCheck,"Human in the loop","High-value purchases pause in an approval queue so a merchant can approve or deny them."],[CheckCircle2,"Tamper-evident logs","Each decision links to the previous event with a hash, preserving a verifiable chain of events."]].map(([Icon,title,copy]) => <div key={String(title)} className="rounded-2xl border border-brand-blue/25 bg-white/[0.05] p-6"><Icon className="h-6 w-6 text-brand-blue" /><h2 className="mt-6 text-lg font-semibold">{String(title)}</h2><p className="mt-2 text-sm leading-relaxed text-white/50">{String(copy)}</p></div>)}</div><div className="mt-12 rounded-2xl border border-success/20 bg-success/10 p-6"><p className="text-sm leading-relaxed text-white/70"><span className="font-semibold text-success">Demo note:</span> this workspace uses simulated authentication, catalog data, and Razorpay test-mode behavior. No real payment is created.</p></div></main></div> }
+
+export function FeaturesPage() {
+  return (
+    <div className={shell}>
+      <Header />
+      <main className="mx-auto max-w-6xl px-6 py-8">
+        <Link to="/" className="mb-4 inline-flex items-center gap-2 text-sm text-white/50 hover:text-white">
+          <ArrowLeft className="h-4 w-4" />
+          Back home
+        </Link>
+        <FeaturesSection />
+      </main>
+    </div>
+  );
+}
+
+// Keep Security as alias/fallback pointing to Features
+export const Security = FeaturesPage;
+export const Features = FeaturesPage;

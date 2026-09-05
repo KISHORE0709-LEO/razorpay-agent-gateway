@@ -1,8 +1,4 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
 import {
-  ShieldCheck,
-  Zap,
   SlidersHorizontal,
   GitFork,
   Clock3,
@@ -12,10 +8,9 @@ import {
   CheckCircle2,
   RotateCcw,
   Ban,
-  Sparkles,
   Bot,
   ChevronDown,
-  ArrowRight,
+  Layers,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -25,7 +20,6 @@ interface StepItem {
   icon: any;
   title: string;
   badge: string;
-  pitchTime: string;
   description: string;
   details: string[];
   visualType?: "outcomes";
@@ -40,15 +34,13 @@ const ROADMAP_STEPS: StepItem[] = [
     icon: Bot,
     title: "AI Buyer Dispatches Purchase Intent",
     badge: "Autonomous Agent Ingestion",
-    pitchTime: "0:00 – 0:25 The Hook",
     description:
-      "An autonomous AI agent shops on someone's behalf. It parses user intent, target product, and budget, presenting its verified cryptographic agent identity (e.g. agt_live_7f3c9e). No payment can reach Razorpay without first passing through SentryPay.",
+      "An autonomous AI agent identifies a purchase requirement, presenting its verified cryptographic agent identity (e.g. agt_live_7f3c9e). No payment can reach Razorpay without passing through SentryPay first.",
     details: [
-      "Interoperable with Google AP2 signed mandates and NPCI delegated UPI spend frameworks",
-      "Authenticates agent identity and session before evaluating payment parameters",
-      "Extracts target product, price ceiling, and category specifications in real time",
+      "Interoperable with AP2 signed mandates & delegated UPI spend frameworks",
+      "Authenticates agent identity, budget cap, and target product in real time",
     ],
-    tags: ["Agent ID: agt_live_7f3c9e", "AP2 Mandates", "Delegated UPI Spend"],
+    tags: ["Agent ID Verification", "AP2 Mandates", "Delegated UPI Spend"],
     alignment: "left",
   },
   {
@@ -57,15 +49,13 @@ const ROADMAP_STEPS: StepItem[] = [
     icon: SlidersHorizontal,
     title: "Firewall Evaluates Merchant Policy",
     badge: "Catalog & Rule Cross-Check",
-    pitchTime: "0:50 – 1:35 Policy & Catalog",
     description:
-      "The merchant sets policy once: max per-order amount, daily velocity ceiling, approval threshold, and allowed categories. Allowed categories are synced live with the merchant's real catalog — brand-new categories start blocked by default until explicitly enabled.",
+      "SentryPay checks the request against the merchant's rules: per-order caps, daily spend velocity, approval thresholds, and allowed categories synced directly from the merchant's live catalog.",
     details: [
-      "Dynamic catalog category sync ensures zero ungoverned product lines",
-      "Cumulative velocity check monitors real-time daily spend counters across all agents",
-      "Policy Advisor auto-generates calibrated starting values based on median catalog prices",
+      "Live catalog sync ensures new/unknown categories are blocked by default",
+      "Real-time velocity pool tracks running daily spend across all agents",
     ],
-    tags: ["Live Catalog Sync", "Category Allow-Lists", "Daily Spend Velocity Pool", "Policy Advisor"],
+    tags: ["Dynamic Catalog Sync", "Velocity Limits", "Category Allow-Lists"],
     alignment: "right",
   },
   {
@@ -74,15 +64,12 @@ const ROADMAP_STEPS: StepItem[] = [
     icon: GitFork,
     title: "The 4-Way Governed Decision Engine",
     badge: "Deterministic Decision Routing",
-    pitchTime: "1:35 – 2:35 Core 4-Way Demo",
     description:
-      "Rather than a rigid binary yes/no, SentryPay dynamically branches each purchase request into one of four governed outcomes designed to maximize merchant revenue while strictly enforcing risk boundaries.",
+      "Rather than a rigid yes/no, SentryPay dynamically branches each request into one of four governed outcomes to protect the merchant while maximizing sales.",
     visualType: "outcomes",
     details: [
-      "Approve: In-policy purchases under threshold auto-checkout immediately",
-      "Recover: Over-budget items trigger a smart catalog search, offering in-budget alternatives to save lost revenue",
-      "Escalate: Purchases between the threshold and per-order limit pause safely for human merchant review",
-      "Block: Disallowed categories or unauthorized policies are rejected with immutable plain-text reasons",
+      "Instant checkout for low-risk orders; smart alternative offers for over-budget items",
+      "Human review for borderline amounts; hard blocks with logged reasons for policy breaches",
     ],
     tags: ["Approve", "Recover (Revenue Defense)", "Escalate", "Block"],
     alignment: "left",
@@ -92,16 +79,14 @@ const ROADMAP_STEPS: StepItem[] = [
     stepNum: "04",
     icon: Clock3,
     title: "Human-in-the-Loop Approval Queue",
-    badge: "Real-Time Oversight with Zero Lag",
-    pitchTime: "2:35 – 3:00 Live Escalations",
+    badge: "Real-Time Merchant Oversight",
     description:
-      "Escalated high-value requests land instantly in the merchant's live Approval Queue. The merchant sees the item, amount, agent identity, and real-time trust score, granting a 1-tap Approve or Deny with 0ms optimistic UI responsiveness.",
+      "High-value requests land immediately in the merchant's live queue. The merchant inspects agent identity, trust score, and pricing with instant 0ms optimistic 1-tap Approve or Deny.",
     details: [
-      "Instant optimistic UI removes resolved cards in 0ms with error rollback guards",
-      "Agent Trust badge informs the merchant of the buyer agent's historical reliability",
-      "Approved requests trigger automated background Razorpay order creation immediately",
+      "Zero-latency optimistic UI updates with automatic error rollback",
+      "Live trust badges provide instant behavioral risk context for the merchant",
     ],
-    tags: ["0ms Optimistic UI", "Agent Trust Badge", "1-Tap Human Decision", "Real-Time Sync"],
+    tags: ["0ms Optimistic UI", "Agent Trust Score", "1-Tap Human Decision"],
     alignment: "right",
   },
   {
@@ -110,13 +95,11 @@ const ROADMAP_STEPS: StepItem[] = [
     icon: CreditCard,
     title: "Protected Payment Execution via Razorpay",
     badge: "Isolated Payment Rails",
-    pitchTime: "2:35 Order Settlement",
     description:
-      "Only transactions with a valid approved verdict ever contact Razorpay. Autonomous agents never touch API secrets, private keys, or raw payment processor credentials. Real test-mode orders are generated safely and bound to the transaction.",
+      "Only approved transactions ever reach Razorpay. AI agents never touch API keys, secrets, or payment credentials. Verified server-side orders are generated safely.",
     details: [
-      "Direct server-to-server Razorpay Orders API call (order_... generated with precise paise conversion)",
-      "Strict credential isolation prevents agents from ever intercepting processor keys",
-      "Live order ID is permanently bound to the audit record for merchant reconciliation",
+      "Direct server-to-server Razorpay Orders API call (order_... with precise paise)",
+      "Strict processor isolation prevents agents from ever intercepting secret keys",
     ],
     tags: ["Razorpay Orders API", "Zero Credential Exposure", "Server-Side Isolation"],
     alignment: "left",
@@ -127,15 +110,13 @@ const ROADMAP_STEPS: StepItem[] = [
     icon: Link2,
     title: "Verdict Chain Cryptographic Ledger",
     badge: "SHA-256 Tamper-Evident Ledger",
-    pitchTime: "3:15 – 3:45 Verdict Chain",
     description:
-      "Every single decision — approve, recover, escalate, block, and outcome update — is cryptographically sealed and hash-chained to the prior block using immutable creation fields and SHA-256 hashing. A 1-click audit confirms 100% chain integrity back to the genesis block.",
+      "Every decision and merchant action is cryptographically sealed and hash-chained to the previous block using SHA-256. A 1-click audit confirms 100% chain integrity back to genesis.",
     details: [
-      "Serialized atomic queue (withChainLock) guarantees zero chain forks even during concurrent transactions",
-      "Strictly monotonic timestamps prevent millisecond sorting ambiguities",
-      "Interactive 1-click 'Verify Chain' recalculates all hashes from genesis block 000000... to present",
+      "Serialized atomic queue prevents forks during concurrent transactions",
+      "Interactive 1-click audit recalculates all hashes from genesis block 000000...",
     ],
-    tags: ["SHA-256 Chained Blocks", "1-Click Chain Verification", "Tamper-Evident Audit", "Self-Healing"],
+    tags: ["SHA-256 Chained Blocks", "1-Click Chain Audit", "Tamper-Evident Ledger"],
     alignment: "right",
   },
   {
@@ -144,84 +125,38 @@ const ROADMAP_STEPS: StepItem[] = [
     icon: TrendingUp,
     title: "Autonomous Trust Scores & Safe Growth Campaigns",
     badge: "Reputation & Governed Growth",
-    pitchTime: "3:45 – 4:40 Trust & Campaigns",
     description:
-      "Every agent develops an evolving trust score based on its transaction track record. Clean behavior grants lower friction, while repeated blocks trigger flagged scrutiny — without ever moving the merchant's hard caps. Meanwhile, the Growth Engine suggests temporary, 20%-capped rule boosts that auto-expire.",
+      "Agents earn evolving trust scores based on payment track records. Concurrently, the Growth Engine suggests temporary, 20%-capped rule boosts that auto-expire and never mutate base rules.",
     details: [
-      "Dynamic agent trust scores (Flagged, Low, Neutral, Trusted, Verified) scale scrutiny safely",
-      "Campaign suggestions auto-cap at 20% above base merchant rules to prevent reckless exposure",
-      "Campaigns are time-boxed with explicit expiration times and attributed in every block's verdict reason",
+      "Behavioral trust levels (Flagged to Verified) adjust scrutiny safely",
+      "Promotional campaigns auto-cap at +20% and auto-expire cleanly",
     ],
-    tags: ["Adaptive Scrutiny", "20% Safety Ceiling", "Auto-Expiring Campaigns", "Full Chain Attribution"],
+    tags: ["Adaptive Scrutiny", "20% Safety Ceiling", "Auto-Expiring Campaigns"],
     alignment: "center",
   },
 ];
 
 export function HowItWorksRoadmap() {
-  const [activeStep, setActiveStep] = useState<string>("step-1");
-
-  const scrollToStep = (stepId: string) => {
-    setActiveStep(stepId);
-    const el = document.getElementById(stepId);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
-  };
-
   return (
-    <section id="how-it-works-journey" className="relative z-10 w-full pt-12 pb-24">
+    <section id="how-it-works-journey" className="relative z-10 w-full pt-10 pb-16">
       {/* Section Header */}
-      <div className="text-center max-w-3xl mx-auto space-y-4 px-4 sm:px-6">
-        <div className="inline-flex items-center gap-2 rounded-full border border-brand-blue/30 bg-brand-blue/10 px-4 py-1.5 text-xs font-semibold text-brand-blue shadow-xs">
-          <Sparkles className="h-3.5 w-3.5" />
-          <span>The 5-Minute Architecture Blueprint</span>
+      <div className="text-center max-w-2xl mx-auto space-y-3 px-4 sm:px-6">
+        <div className="inline-flex items-center gap-2 rounded-full border border-brand-blue/30 bg-brand-blue/10 px-3.5 py-1 text-xs font-semibold text-brand-blue shadow-xs">
+          <Layers className="h-3.5 w-3.5" />
+          <span>Execution Pipeline</span>
         </div>
 
-        <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight text-white leading-tight">
+        <h2 className="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight text-white leading-tight">
           How SentryPay Works
         </h2>
 
-        <p className="text-sm sm:text-base text-white/70 max-w-2xl mx-auto leading-relaxed">
-          The end-to-end journey from an autonomous AI buyer intent to governed policy evaluation, instant Razorpay settlement, and tamper-evident cryptographic ledgers.
+        <p className="text-xs sm:text-sm text-white/70 max-w-xl mx-auto leading-relaxed">
+          The end-to-end journey from an AI agent's purchase intent to real-time policy evaluation, human review, Razorpay settlement, and cryptographic logging.
         </p>
       </div>
 
-      {/* 5-Minute Pitch Mode Timeline Bar */}
-      <div className="mt-10 max-w-4xl mx-auto px-4 sm:px-6">
-        <div className="rounded-2xl border border-brand-blue/30 bg-[#071D3A]/90 p-4 shadow-[0_8px_32px_rgba(0,0,0,0.3)] backdrop-blur-md">
-          <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-white/10">
-            <div className="flex items-center gap-2">
-              <span className="flex h-2 w-2 rounded-full bg-brand-blue animate-ping" />
-              <span className="text-xs font-bold uppercase tracking-wider text-brand-blue font-mono">
-                5-Minute Pitch Presentation Guide
-              </span>
-            </div>
-            <span className="text-[11px] text-white/50">
-              Click any stage to jump directly to that step
-            </span>
-          </div>
-
-          <div className="mt-3 flex flex-wrap items-center gap-2 overflow-x-auto pb-1">
-            {ROADMAP_STEPS.map((s) => (
-              <button
-                key={s.id}
-                onClick={() => scrollToStep(s.id)}
-                className={cn(
-                  "rounded-lg px-3 py-1.5 text-xs font-mono font-semibold transition shrink-0 cursor-pointer border",
-                  activeStep === s.id
-                    ? "bg-brand-blue text-white border-brand-blue shadow-[0_0_12px_rgba(13,148,251,0.5)]"
-                    : "bg-white/5 text-white/70 border-white/10 hover:border-white/25 hover:bg-white/10"
-                )}
-              >
-                <span>{s.stepNum}. {s.pitchTime.split(" ")[0]}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* S-Curve Pathway Layout (Alternating Left / Right) */}
-      <div className="relative mt-16 max-w-4xl mx-auto px-4 sm:px-6">
+      {/* S-Curve Pathway Layout (Compact, Optimal Alternating Cards) */}
+      <div className="relative mt-10 max-w-3xl mx-auto px-4 sm:px-6">
         {ROADMAP_STEPS.map((step, idx) => {
           const isLeft = step.alignment === "left";
           const isRight = step.alignment === "right";
@@ -232,112 +167,84 @@ export function HowItWorksRoadmap() {
           const Icon = step.icon;
 
           return (
-            <div key={step.id} id={step.id} className="relative scroll-mt-24">
-              {/* Card Container */}
+            <div key={step.id} id={step.id} className="relative">
+              {/* Compact Card Container */}
               <div
                 className={cn(
-                  "w-full transition-all duration-300",
-                  isLeft && "md:mr-auto md:w-[86%] lg:w-[82%]",
-                  isRight && "md:ml-auto md:w-[86%] lg:w-[82%]",
-                  isCenter && "mx-auto md:w-[92%] lg:w-[88%]"
+                  "w-full transition-all duration-200",
+                  isLeft && "md:mr-auto md:w-[84%]",
+                  isRight && "md:ml-auto md:w-[84%]",
+                  isCenter && "mx-auto md:w-[90%]"
                 )}
               >
-                <div className="rounded-[28px] p-6 sm:p-8 transition-all duration-300 relative border-2 border-brand-blue/35 bg-[#071D3A]/95 shadow-[0_12px_36px_rgba(0,0,0,0.45)] hover:border-brand-blue hover:shadow-[0_0_32px_rgba(13,148,251,0.25)]">
-                  {/* Top Row: Icon Badge (Left) & Step Number Pill (Right) */}
-                  <div className="flex items-center justify-between gap-4">
-                    {/* Left Icon Badge */}
-                    <div className="flex h-12 w-12 sm:h-14 sm:w-14 shrink-0 items-center justify-center rounded-2xl border-2 border-brand-blue bg-brand-blue/20 text-brand-blue shadow-inner">
-                      <Icon className="h-6 w-6 sm:h-7 sm:w-7" />
+                <div className="rounded-2xl p-4 sm:p-5 transition-all duration-200 relative border border-brand-blue/30 bg-[#071D3A]/90 shadow-[0_8px_24px_rgba(0,0,0,0.35)] hover:border-brand-blue/60 hover:shadow-[0_0_20px_rgba(13,148,251,0.2)]">
+                  {/* Top Row: Icon Badge (Left) & Badge + Step Number (Right) */}
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl border border-brand-blue/50 bg-brand-blue/15 text-brand-blue shadow-xs">
+                        <Icon className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
+                      </div>
+                      <span className="text-[11px] font-medium text-white/60">
+                        {step.badge}
+                      </span>
                     </div>
 
-                    {/* Right Step Number Badge */}
-                    <span className="rounded-full bg-[#001733] border border-white/20 px-3.5 py-1 text-xs font-mono font-black text-white tracking-widest shadow-sm">
+                    <span className="rounded-full bg-[#001733] border border-white/15 px-2.5 py-0.5 text-[11px] font-mono font-bold text-brand-blue">
                       {step.stepNum}
                     </span>
                   </div>
 
                   {/* Headline Title */}
-                  <h3 className="mt-5 text-2xl sm:text-3xl font-black tracking-tight text-white leading-snug">
+                  <h3 className="mt-3 text-base sm:text-lg font-bold tracking-tight text-white leading-snug">
                     {step.title}
                   </h3>
 
-                  {/* Pitch Timestamp Pill */}
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <span className="text-[11px] font-mono font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-md bg-brand-blue/15 text-brand-blue border border-brand-blue/30">
-                      {step.pitchTime}
-                    </span>
-                    <span className="text-xs text-white/40">•</span>
-                    <span className="text-xs font-medium text-white/60">
-                      {step.badge}
-                    </span>
-                  </div>
-
                   {/* Description Paragraph */}
-                  <p className="mt-4 text-sm sm:text-base leading-relaxed text-white/75 font-normal">
+                  <p className="mt-2 text-xs sm:text-sm leading-relaxed text-white/70">
                     {step.description}
                   </p>
 
-                  {/* Step 3 Special Visual: The 4 Decision Outcomes Grid */}
+                  {/* Step 3 Special Visual: Compact 4 Decision Outcomes */}
                   {step.visualType === "outcomes" && (
-                    <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                      <div className="p-3.5 rounded-xl border border-success/30 bg-success/10 text-success flex items-start gap-2.5">
-                        <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5 text-success" />
-                        <div>
-                          <span className="text-xs font-bold block text-success">Approve (Instant)</span>
-                          <span className="text-[11px] block mt-0.5 text-white/70">
-                            Under ₹2,000 threshold. Auto-creates live Razorpay test order.
-                          </span>
-                        </div>
+                    <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <div className="p-2 rounded-lg border border-success/30 bg-success/10 text-success flex items-center gap-1.5">
+                        <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-success" />
+                        <span className="text-[11px] font-bold text-success truncate">Approve</span>
                       </div>
 
-                      <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400 flex items-start gap-2.5">
-                        <RotateCcw className="h-4 w-4 shrink-0 mt-0.5 text-amber-500" />
-                        <div>
-                          <span className="text-xs font-bold block text-amber-400">Recover (Defend Sale)</span>
-                          <span className="text-[11px] block mt-0.5 text-white/70">
-                            Exceeds per-order cap. Offers in-budget alternative in same category.
-                          </span>
-                        </div>
+                      <div className="p-2 rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-400 flex items-center gap-1.5">
+                        <RotateCcw className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+                        <span className="text-[11px] font-bold text-amber-400 truncate">Recover</span>
                       </div>
 
-                      <div className="p-3.5 rounded-xl border border-brand-blue/30 bg-brand-blue/10 text-brand-blue flex items-start gap-2.5">
-                        <Clock3 className="h-4 w-4 shrink-0 mt-0.5 text-brand-blue" />
-                        <div>
-                          <span className="text-xs font-bold block text-brand-blue">Escalate (Human Sign-off)</span>
-                          <span className="text-[11px] block mt-0.5 text-white/70">
-                            Between ₹2,000 and ₹5,000 cap. Pauses for 1-tap merchant decision.
-                          </span>
-                        </div>
+                      <div className="p-2 rounded-lg border border-brand-blue/30 bg-brand-blue/10 text-brand-blue flex items-center gap-1.5">
+                        <Clock3 className="h-3.5 w-3.5 shrink-0 text-brand-blue" />
+                        <span className="text-[11px] font-bold text-brand-blue truncate">Escalate</span>
                       </div>
 
-                      <div className="p-3.5 rounded-xl border border-destructive/30 bg-destructive/10 text-destructive flex items-start gap-2.5">
-                        <Ban className="h-4 w-4 shrink-0 mt-0.5 text-destructive" />
-                        <div>
-                          <span className="text-xs font-bold block text-destructive">Block (Disallowed)</span>
-                          <span className="text-[11px] block mt-0.5 text-white/70">
-                            Disallowed category or limit breach. Refused with immutable logged reason.
-                          </span>
-                        </div>
+                      <div className="p-2 rounded-lg border border-destructive/30 bg-destructive/10 text-destructive flex items-center gap-1.5">
+                        <Ban className="h-3.5 w-3.5 shrink-0 text-destructive" />
+                        <span className="text-[11px] font-bold text-destructive truncate">Block</span>
                       </div>
                     </div>
                   )}
 
-                  {/* Bullet Highlights */}
-                  <ul className="mt-5 space-y-2 border-t border-white/10 pt-4">
+                  {/* Details row */}
+                  <ul className="mt-3 space-y-1.5 border-t border-white/10 pt-2.5">
                     {step.details.map((detail, dIdx) => (
-                      <li key={dIdx} className="flex items-start gap-2.5 text-xs sm:text-sm">
-                        <span className="h-1.5 w-1.5 rounded-full bg-brand-blue shrink-0 mt-2" />
-                        <span className="text-white/70">{detail}</span>
+                      <li key={dIdx} className="flex items-start gap-2 text-xs">
+                        <span className="h-1.5 w-1.5 rounded-full bg-brand-blue shrink-0 mt-1.5" />
+                        <span className="text-white/65 leading-relaxed">{detail}</span>
                       </li>
                     ))}
                   </ul>
 
-                  {/* Bottom Pill Tags */}
-                  <div className="mt-5 flex flex-wrap gap-2 pt-2">
+                  {/* Tags */}
+                  <div className="mt-3 flex flex-wrap gap-1.5 pt-1">
                     {step.tags.map((tag) => (
                       <span
                         key={tag}
-                        className="rounded-full px-2.5 py-1 text-[11px] font-mono font-medium border border-brand-blue/20 bg-brand-blue/10 text-brand-blue"
+                        className="rounded-md px-2 py-0.5 text-[10px] font-mono border border-brand-blue/20 bg-brand-blue/5 text-brand-blue/90"
                       >
                         {tag}
                       </span>
@@ -346,147 +253,79 @@ export function HowItWorksRoadmap() {
                 </div>
               </div>
 
-              {/* S-Curve Connector between Steps */}
+              {/* Compact S-Curve Connector between Steps */}
               {!isLast && nextStep && (
-                <div className="w-full py-4 sm:py-6 flex items-center justify-center relative">
+                <div className="w-full py-2 flex items-center justify-center relative">
                   {/* Desktop S-Curve SVG Pathway */}
-                  <div className="hidden md:block w-full h-24 lg:h-28 relative">
+                  <div className="hidden md:block w-full h-12 lg:h-14 relative">
                     <svg
                       className="w-full h-full overflow-visible"
-                      viewBox="0 0 1000 120"
+                      viewBox="0 0 1000 60"
                       preserveAspectRatio="none"
                       fill="none"
                     >
                       <defs>
                         <marker
-                          id={`arrow-head-roadmap-${step.stepNum}`}
+                          id={`arrow-head-opt-${step.stepNum}`}
                           viewBox="0 0 10 10"
                           refX="6"
                           refY="5"
-                          markerWidth="6"
-                          markerHeight="6"
+                          markerWidth="5"
+                          markerHeight="5"
                           orient="auto"
                         >
                           <path d="M 0 1 L 9 5 L 0 9 z" fill="#0D94FB" />
                         </marker>
                       </defs>
 
-                      {/* Transition Left Card to Right Card */}
+                      {/* Transition Left to Right */}
                       {isLeft && nextStep.alignment === "right" && (
                         <path
-                          d="M 280 0 C 280 65, 720 55, 720 114"
+                          d="M 300 0 C 300 32, 700 28, 700 56"
                           stroke="#0D94FB"
-                          strokeWidth="3.5"
-                          strokeDasharray="8 8"
+                          strokeWidth="2.5"
+                          strokeDasharray="6 6"
                           strokeLinecap="round"
-                          markerEnd={`url(#arrow-head-roadmap-${step.stepNum})`}
+                          markerEnd={`url(#arrow-head-opt-${step.stepNum})`}
                         />
                       )}
 
-                      {/* Transition Right Card to Left Card */}
+                      {/* Transition Right to Left */}
                       {isRight && nextStep.alignment === "left" && (
                         <path
-                          d="M 720 0 C 720 65, 280 55, 280 114"
+                          d="M 700 0 C 700 32, 300 28, 300 56"
                           stroke="#0D94FB"
-                          strokeWidth="3.5"
-                          strokeDasharray="8 8"
+                          strokeWidth="2.5"
+                          strokeDasharray="6 6"
                           strokeLinecap="round"
-                          markerEnd={`url(#arrow-head-roadmap-${step.stepNum})`}
+                          markerEnd={`url(#arrow-head-opt-${step.stepNum})`}
                         />
                       )}
 
-                      {/* Transition Right Card to Center Card (Step 6 -> Step 7) */}
+                      {/* Transition Right to Center */}
                       {isRight && nextStep.alignment === "center" && (
                         <path
-                          d="M 720 0 C 720 65, 500 55, 500 114"
+                          d="M 700 0 C 700 32, 500 28, 500 56"
                           stroke="#0D94FB"
-                          strokeWidth="3.5"
-                          strokeDasharray="8 8"
+                          strokeWidth="2.5"
+                          strokeDasharray="6 6"
                           strokeLinecap="round"
-                          markerEnd={`url(#arrow-head-roadmap-${step.stepNum})`}
+                          markerEnd={`url(#arrow-head-opt-${step.stepNum})`}
                         />
                       )}
                     </svg>
                   </div>
 
-                  {/* Mobile Connector: Clean Vertical Dashed Line with Arrowhead */}
-                  <div className="md:hidden flex flex-col items-center justify-center my-2">
-                    <div className="w-0 h-14 border-l-2 border-dashed border-brand-blue" />
-                    <ChevronDown className="h-5 w-5 -mt-1 text-brand-blue" />
+                  {/* Mobile Connector */}
+                  <div className="md:hidden flex flex-col items-center justify-center my-1">
+                    <div className="w-0 h-6 border-l-2 border-dashed border-brand-blue" />
+                    <ChevronDown className="h-4 w-4 -mt-1 text-brand-blue" />
                   </div>
                 </div>
               )}
             </div>
           );
         })}
-      </div>
-
-      {/* Pitch Summary: 3 Distinctions from a Generic Checkout Bot */}
-      <div className="mt-20 max-w-4xl mx-auto px-4 sm:px-6">
-        <div className="rounded-3xl p-8 sm:p-10 border-2 border-brand-blue/40 bg-[#071D3A]/95 shadow-[0_16px_40px_rgba(0,0,0,0.4)] relative overflow-hidden backdrop-blur-md">
-          <div className="max-w-2xl">
-            <span className="text-xs font-mono font-bold uppercase tracking-wider text-brand-blue">
-              The 5-Minute Pitch Closing Argument
-            </span>
-            <h3 className="text-2xl sm:text-3xl font-black tracking-tight text-white mt-2">
-              Why SentryPay is Not Just Another Checkout Bot
-            </h3>
-            <p className="mt-3 text-sm sm:text-base text-white/70">
-              Three core pillars make this the definitive trust and governance gateway for agentic commerce:
-            </p>
-          </div>
-
-          <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-5">
-            <div className="p-5 rounded-2xl border border-white/10 bg-white/5">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/15 text-amber-500 mb-3">
-                <RotateCcw className="h-5 w-5" />
-              </div>
-              <h4 className="font-bold text-base text-white">
-                1. Smart Recovery Flow
-              </h4>
-              <p className="mt-2 text-xs sm:text-sm leading-relaxed text-white/65">
-                Turns blocked, over-budget sales into closed orders by automatically offering nearest in-budget catalog alternatives in the exact same category.
-              </p>
-            </div>
-
-            <div className="p-5 rounded-2xl border border-white/10 bg-white/5">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-blue/15 text-brand-blue mb-3">
-                <Link2 className="h-5 w-5" />
-              </div>
-              <h4 className="font-bold text-base text-white">
-                2. Cryptographic Audit Chain
-              </h4>
-              <p className="mt-2 text-xs sm:text-sm leading-relaxed text-white/65">
-                SHA-256 tamper-evident ledger sealing every approve, recover, escalate, and block event with 1-click end-to-end verification.
-              </p>
-            </div>
-
-            <div className="p-5 rounded-2xl border border-white/10 bg-white/5">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-success/15 text-success mb-3">
-                <ShieldCheck className="h-5 w-5" />
-              </div>
-              <h4 className="font-bold text-base text-white">
-                3. Industry Alignment
-              </h4>
-              <p className="mt-2 text-xs sm:text-sm leading-relaxed text-white/65">
-                Identity and policy patterns aligning with Google's AP2 signed mandates and NPCI's delegated UPI spend frameworks.
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-10 flex flex-wrap items-center justify-between gap-4 pt-6 border-t border-white/10">
-            <div className="text-xs text-white/50">
-              Ready to test the policy firewall live?
-            </div>
-            <Link
-              to="/login"
-              className="inline-flex items-center gap-2 rounded-xl bg-brand-blue px-6 py-3 text-xs sm:text-sm font-semibold text-white shadow-md hover:brightness-110 transition cursor-pointer"
-            >
-              <span>Launch Merchant Workspace</span>
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-          </div>
-        </div>
       </div>
     </section>
   );
