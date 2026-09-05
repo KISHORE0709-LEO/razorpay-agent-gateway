@@ -40,6 +40,24 @@ export function FeaturesPage() {
   );
 }
 
+import { AboutMeSection } from "@/components/landing/AboutMeSection";
+
 // Keep Security as alias/fallback pointing to Features
 export const Security = FeaturesPage;
 export const Features = FeaturesPage;
+
+export function AboutMePage() {
+  return (
+    <div className={shell}>
+      <Header />
+      <main className="mx-auto max-w-6xl px-6 py-8">
+        <Link to="/" className="mb-4 inline-flex items-center gap-2 text-sm text-white/50 hover:text-white">
+          <ArrowLeft className="h-4 w-4" />
+          Back home
+        </Link>
+        <AboutMeSection />
+      </main>
+    </div>
+  );
+}
+export const AboutMe = AboutMePage;

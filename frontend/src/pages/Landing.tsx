@@ -3,6 +3,7 @@ import { ArrowRight, ShieldCheck, Sparkles } from "lucide-react";
 import { FirewallFlowAnimation } from "@/components/landing/FirewallFlowAnimation";
 import { HowItWorksRoadmap } from "@/components/landing/HowItWorksRoadmap";
 import { FeaturesSection } from "@/components/landing/FeaturesSection";
+import { AboutMeSection } from "@/components/landing/AboutMeSection";
 
 export default function Landing() {
   return (
@@ -33,6 +34,12 @@ export default function Landing() {
             className="rounded-full px-3 py-1.5 text-xs text-white/60 transition hover:bg-white/10 hover:text-white cursor-pointer"
           >
             Features
+          </a>
+          <a
+            href="#about-me"
+            className="rounded-full px-3 py-1.5 text-xs text-white/60 transition hover:bg-white/10 hover:text-white cursor-pointer"
+          >
+            About me
           </a>
         </nav>
         <Link
@@ -109,6 +116,11 @@ export default function Landing() {
       {/* Features Section */}
       <div className="relative border-t border-white/10">
         <FeaturesSection />
+      </div>
+
+      {/* About Me Section */}
+      <div className="relative border-t border-white/10">
+        <AboutMeSection />
       </div>
 
       <footer className="relative z-10 border-t border-white/10 px-6 py-8 text-center text-xs text-white/40 sm:px-10">

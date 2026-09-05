@@ -11,7 +11,7 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Signup from "./pages/Signup";
 import { ForgotPassword, ResetPassword } from "./pages/PasswordFlow";
-import { HowItWorks, Features, Security } from "./pages/InfoPages";
+import { HowItWorks, Features, AboutMe, Security } from "./pages/InfoPages";
 import NotFound from "./pages/NotFound";
 import { FirewallProvider } from "./lib/store";
 
@@ -32,6 +32,7 @@ const App = () => (
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/how-it-works" element={<HowItWorks />} />
             <Route path="/features" element={<Features />} />
+            <Route path="/about-me" element={<AboutMe />} />
             <Route path="/security" element={<Security />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="*" element={<NotFound />} />
