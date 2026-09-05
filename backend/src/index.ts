@@ -46,10 +46,17 @@ app.post("/api/campaigns/generate", handleGenerateCampaigns);
 app.post("/api/campaigns/activate", handleActivateCampaign);
 app.post("/api/campaigns/deactivate", handleDeactivateCampaign);
 
+// Health check endpoints for Render / cloud monitoring
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+app.get("/", (_req, res) => {
+  res.json({ status: "ok", service: "sentrypay-agent-gateway-backend" });
+});
+
 const PORT = process.env.PORT || 8080;
-// Only listen if not imported by node-build.ts
-if (process.env.NODE_ENV !== "production") {
+if (process.env.NODE_ENV !== "test") {
   app.listen(PORT, () => {
-    console.log(`Server listening on port ${PORT}`);
+    console.log(`🚀 SentryPay Backend server listening on port ${PORT}`);
   });
 }

@@ -11,6 +11,7 @@ import { ApprovalItem, AuditEntry, Decision, Product, Rules } from "./types";
 import { db } from "./firebase";
 import { doc, collection, onSnapshot } from "firebase/firestore";
 import { calculateTodayApprovedSpend } from "@shared/api";
+import { apiUrl } from "./api";
 
 export const AGENT_ID = "agt_live_7f3c9e";
 
@@ -179,7 +180,7 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
       skipEnhance?: boolean,
     ): Promise<SubmitResult> => {
       try {
-        const response = await fetch("/api/evaluate", {
+        const response = await fetch(apiUrl("/api/evaluate"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -257,7 +258,7 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
   const sendChatRequest = useCallback(
     async (message: string): Promise<SubmitResult> => {
       try {
-        const response = await fetch("/api/chat", {
+        const response = await fetch(apiUrl("/api/chat"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -349,7 +350,7 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
   const resolveApproval = useCallback(
     async (id: string, approve: boolean): Promise<SubmitResult | undefined> => {
       try {
-        const res = await fetch("/api/resolve", {
+        const res = await fetch(apiUrl("/api/resolve"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ transactionId: id, approve }),

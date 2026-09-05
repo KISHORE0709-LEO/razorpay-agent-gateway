@@ -42,6 +42,7 @@ import {
   Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { apiUrl } from "@/lib/api";
 import { CATEGORIES } from "@/lib/catalog";
 import { AGENT_ID, useFirewall, SubmitResult } from "@/lib/store";
 import { Decision, Product, Rules, Campaign, AuditEntry } from "@/lib/types";
@@ -928,7 +929,7 @@ function RulesPanel() {
           }
         } catch (serverErr) {
           console.warn("Direct Firestore getDocFromServer fallback to /api/rules:", serverErr);
-          const res = await fetch("/api/rules?merchantId=demo_merchant");
+          const res = await fetch(apiUrl("/api/rules?merchantId=demo_merchant"));
           if (res.ok) {
             const data = await res.json();
             serverRules = {
@@ -991,7 +992,7 @@ function RulesPanel() {
       await setDoc(rulesRef, rulesPayload, { merge: true });
 
       // 2. Also sync to backend API endpoint to ensure server-side cache invalidation and verify
-      const apiRes = await fetch("/api/rules", {
+      const apiRes = await fetch(apiUrl("/api/rules"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -3602,7 +3603,7 @@ function CampaignsPanel() {
 
   async function fetchCampaigns() {
     try {
-      const res = await fetch("/api/campaigns?merchantId=demo_merchant");
+      const res = await fetch(apiUrl("/api/campaigns?merchantId=demo_merchant"));
       if (res.ok) {
         const data = await res.json();
         if (data.campaigns) {
@@ -3618,7 +3619,7 @@ function CampaignsPanel() {
     setLoading(true);
     setMessage(null);
     try {
-      const res = await fetch("/api/campaigns/generate", {
+      const res = await fetch(apiUrl("/api/campaigns/generate"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ merchantId: "demo_merchant" }),
@@ -3641,7 +3642,7 @@ function CampaignsPanel() {
     setActivatingId(campaignId);
     setMessage(null);
     try {
-      const res = await fetch("/api/campaigns/activate", {
+      const res = await fetch(apiUrl("/api/campaigns/activate"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ merchantId: "demo_merchant", campaignId, durationHours: 48 }),
@@ -3655,6 +3656,7 @@ function CampaignsPanel() {
     } catch (err) {
       setMessage({ text: "Error activating campaign", type: "error" });
     } finally {
+      setLoading(false);
       setActivatingId(null);
     }
   }
@@ -3662,7 +3664,7 @@ function CampaignsPanel() {
   async function handleDeactivate(campaignId: string) {
     setMessage(null);
     try {
-      const res = await fetch("/api/campaigns/deactivate", {
+      const res = await fetch(apiUrl("/api/campaigns/deactivate"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ merchantId: "demo_merchant", campaignId }),

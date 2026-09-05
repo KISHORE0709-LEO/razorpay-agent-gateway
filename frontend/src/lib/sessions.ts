@@ -1,6 +1,7 @@
 import { db } from "./firebase";
 import { collection, doc, setDoc, deleteDoc, query, orderBy, onSnapshot, Unsubscribe } from "firebase/firestore";
 import { SubmitResult } from "./store";
+import { apiUrl } from "./api";
 
 export interface ChatMessage {
   id: string;
@@ -52,7 +53,7 @@ export async function persistSession(merchantId: string, session: ChatSession): 
     await setDoc(sessionRef, payload, { merge: true });
   } catch (err) {
     console.warn("Direct Firestore setDoc failed, saving via /api/chat/sessions fallback:", err);
-    await fetch("/api/chat/sessions", {
+    await fetch(apiUrl("/api/chat/sessions"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ merchantId, session: payload }),
@@ -81,7 +82,7 @@ export function subscribeSessions(
       console.warn("Firestore snapshot error on chatSessions, falling back to REST API:", err);
       if (onError) onError(err);
       try {
-        const res = await fetch(`/api/chat/sessions?merchantId=${merchantId}`);
+        const res = await fetch(apiUrl(`/api/chat/sessions?merchantId=${merchantId}`));
         if (res.ok) {
           const data = await res.json();
           onUpdate(data.sessions || []);
@@ -99,7 +100,7 @@ export async function removeSession(merchantId: string, sessionId: string): Prom
     await deleteDoc(sessionRef);
   } catch (err) {
     console.warn("Direct deleteDoc failed, using /api/chat/sessions DELETE fallback:", err);
-    await fetch(`/api/chat/sessions/${sessionId}?merchantId=${merchantId}`, {
+    await fetch(apiUrl(`/api/chat/sessions/${sessionId}?merchantId=${merchantId}`), {
       method: "DELETE",
     });
   }
