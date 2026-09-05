@@ -78,7 +78,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="flex min-h-screen bg-background text-foreground">
+    <div className="flex h-screen overflow-hidden bg-background text-foreground">
       <aside className={cn("fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r border-white/10 bg-brand-navy text-white shadow-2xl shadow-brand-navy/30 transition-transform duration-300 ease-out", sidebarOpen ? "translate-x-0" : "-translate-x-full")}>
         <div className="flex h-20 items-center justify-between border-b border-white/10 px-6">
           <div className="flex items-center gap-2">
@@ -101,12 +101,12 @@ export default function Dashboard() {
           <button onClick={signOut} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-white/45 transition hover:bg-white/5 hover:text-white"><LogOut className="h-4 w-4" />Sign out</button>
         </div>
       </aside>
-      <div className={cn("min-w-0 flex-1 transition-[padding] duration-300 ease-out", sidebarOpen ? "pl-72" : "pl-0")}>
-        <header className="flex h-20 items-center justify-between border-b border-border bg-card px-5 sm:px-8">
+      <div className={cn("min-w-0 flex-1 transition-[padding] duration-300 ease-out flex flex-col h-full overflow-hidden", sidebarOpen ? "pl-72" : "pl-0")}>
+        <header className="flex h-16 sm:h-20 shrink-0 items-center justify-between border-b border-border bg-card px-5 sm:px-8">
           <div className="flex items-center gap-3"><div className="flex items-center gap-1"><button onClick={() => setSidebarOpen((open) => !open)} className="rounded-lg p-2 text-muted-foreground transition hover:bg-muted hover:text-brand-navy" title={sidebarOpen ? "Close sidebar" : "Open sidebar"}><Menu className="h-4 w-4" /></button></div><div><h1 className="text-lg font-semibold capitalize">{tab === "chat" ? "AI Buyer" : tab === "rules" ? "Firewall Rules" : tab === "catalog" ? "Product Catalog" : tab === "audit" ? "Audit Trail" : tab === "approvals" ? "Approval Queue" : "Overview"}</h1></div></div>
           <div className="flex items-center gap-3"><div className="hidden items-center gap-2 rounded-full border border-success/20 bg-success/10 px-3 py-1.5 text-xs font-medium text-success sm:flex"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-success" />System operational</div><div className="h-8 w-8 rounded-full bg-brand-blue/10 text-center text-xs leading-8 font-semibold text-brand-navy">{merchantEmail?.[0]?.toUpperCase() ?? "M"}</div></div>
         </header>
-        <main className="mx-auto max-w-[1500px] p-5 sm:p-8">
+        <main className={cn("mx-auto w-full max-w-[1500px] flex-1 min-h-0", tab === "chat" ? "p-3 sm:p-4 lg:p-5 flex flex-col overflow-hidden" : "p-5 sm:p-8 overflow-y-auto")}>
           {tab === "overview" && <Overview onTab={setTab} />}
           {tab === "chat" && <BuyerChat />}
           {tab === "rules" && <RulesPanel />}
@@ -1464,8 +1464,8 @@ function BuyerChat() {
   const hasUserMessages = messages.some((m) => m.role === "user");
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="mx-auto max-w-6xl h-full w-full flex flex-col min-h-0 space-y-2.5">
+      <div className="flex items-center justify-between shrink-0">
         <div>
           <div className="flex items-center gap-2">
             <span className="flex h-2 w-2 rounded-full bg-success animate-pulse" />
@@ -1473,7 +1473,7 @@ function BuyerChat() {
               Autonomous Purchasing Simulation
             </span>
           </div>
-          <h2 className="mt-0.5 text-2xl font-bold tracking-tight text-brand-navy">AI Buyer</h2>
+          <h2 className="text-xl font-bold tracking-tight text-brand-navy">AI Buyer</h2>
         </div>
         <div className="hidden sm:flex items-center gap-2">
           <div className="flex items-center gap-1.5 rounded-full border border-border/80 bg-card px-3 py-1 text-xs text-muted-foreground shadow-2xs">
@@ -1483,15 +1483,15 @@ function BuyerChat() {
         </div>
       </div>
 
-      <div className="flex h-[740px] overflow-hidden rounded-2xl border border-border/80 bg-card shadow-sm">
+      <div className="flex-1 min-h-0 flex overflow-hidden rounded-2xl border border-border/80 bg-card shadow-sm">
         {/* Chat Sessions Left Sidebar */}
         <div
           className={cn(
-            "flex flex-col border-r border-border bg-muted/20 transition-all duration-300 ease-in-out shrink-0",
+            "flex flex-col border-r border-border bg-muted/20 transition-all duration-300 ease-in-out shrink-0 h-full",
             sidebarOpen ? "w-72 sm:w-80" : "w-0 overflow-hidden border-none"
           )}
         >
-          <div className="flex items-center justify-between border-b border-border p-3.5">
+          <div className="flex items-center justify-between border-b border-border p-3.5 shrink-0">
             <div className="flex items-center gap-2 text-xs font-semibold text-brand-navy">
               <MessageSquare className="h-4 w-4 text-brand-blue" />
               <span>Chat History</span>
@@ -1509,7 +1509,7 @@ function BuyerChat() {
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5">
+          <div className="flex-1 min-h-0 overflow-y-auto p-2.5 space-y-1.5">
             {sessions.length === 0 ? (
               <div className="p-4 text-center text-xs text-muted-foreground">
                 No past sessions yet. Start a new chat!
@@ -1557,9 +1557,9 @@ function BuyerChat() {
         </div>
 
         {/* Main Chat Conversation Area */}
-        <div className="flex flex-1 flex-col min-w-0 bg-card">
+        <div className="flex flex-1 min-h-0 flex-col bg-card h-full">
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-border px-4 sm:px-5 py-3">
+          <div className="flex items-center justify-between border-b border-border px-4 sm:px-5 py-2.5 shrink-0">
             <div className="flex items-center gap-3 min-w-0">
               <button
                 onClick={() => setSidebarOpen((open) => !open)}
@@ -1597,7 +1597,7 @@ function BuyerChat() {
           </div>
 
           {/* Messages Feed */}
-          <div className="flex-1 overflow-y-auto space-y-4 bg-background/50 p-4 sm:p-6">
+          <div className="flex-1 min-h-0 overflow-y-auto space-y-4 bg-background/50 p-4 sm:p-5">
             {/* Show rich starter hero if session is fresh / no user messages yet */}
             {!hasUserMessages && (
               <div className="my-auto py-6 px-2 text-center max-w-2xl mx-auto space-y-5">
@@ -1740,7 +1740,7 @@ function BuyerChat() {
           </div>
 
           {/* Quick Prompt Suggestions Bar */}
-          <div className="flex items-center gap-1.5 overflow-x-auto border-t border-border/40 bg-muted/15 px-4 py-2 scrollbar-none">
+          <div className="flex items-center gap-1.5 overflow-x-auto border-t border-border/40 bg-muted/15 px-4 py-1.5 scrollbar-none shrink-0">
             <span className="shrink-0 flex items-center gap-1 text-[11px] font-semibold text-muted-foreground mr-1">
               <Sparkles className="h-3 w-3 text-brand-blue" /> Quick test:
             </span>
@@ -1762,7 +1762,7 @@ function BuyerChat() {
           </div>
 
           {/* Redesigned Studio Chatbox Input */}
-          <div className="border-t border-border/60 bg-card/80 p-3.5 sm:p-4 backdrop-blur-md">
+          <div className="border-t border-border/60 bg-card/80 p-3 sm:p-3.5 backdrop-blur-md shrink-0">
             <form
               onSubmit={(e) => {
                 e.preventDefault();
