@@ -188,26 +188,6 @@ function Overview({
 }) {
   const { rules, dailySpent, auditLog, approvals, resolveApproval } = useFirewall();
   
-  const today = new Date().toDateString();
-  const todayLog = auditLog.filter((e) => new Date(e.time).toDateString() === today);
-  
-  // Requests today: count of all transactions today
-  const requestsToday = todayLog.length;
-  
-  // Approved volume: unified real-time sum of approved transactions today
-  const approvedVolume = dailySpent;
-  
-  // Blocked requests: count of blocked transactions today
-  const blockedToday = todayLog.filter((e) => e.decision === "blocked").length;
-  
-  // Daily spend progress bar
-  const dailySpendProgress = rules.dailyLimit > 0 ? Math.min((dailySpent / rules.dailyLimit) * 100, 100) : 0;
-  
-  // Saved via recovery: sum of savedAmount across recovered transactions today
-  const savedViaRecovery = todayLog
-    .filter((e) => e.decision === "recovered" && e.savedAmount)
-    .reduce((sum, e) => sum + (e.savedAmount || 0), 0);
-
   // Group outcome_updates with their original parent transactions
   const outcomeUpdatesByTxId = useMemo(() => {
     const map = new Map<string, AuditEntry>();
@@ -218,6 +198,35 @@ function Overview({
     });
     return map;
   }, [auditLog]);
+
+  const today = new Date().toDateString();
+  const todayLog = auditLog.filter((e) => {
+    const d = new Date(e.time || e.timestamp || 0);
+    return !isNaN(d.getTime()) && d.toDateString() === today;
+  });
+  
+  // Primary transactions today (exclude outcome_updates from top-level request counts)
+  const primaryTodayLog = todayLog.filter((e) => e.type !== "outcome_update");
+  
+  // Requests today: count of all purchase request transactions today
+  const requestsToday = primaryTodayLog.length;
+  
+  // Approved volume: unified real-time sum of approved transactions today
+  const approvedVolume = dailySpent;
+  
+  // Blocked requests: count of blocked transactions today (including denied escalations)
+  const blockedToday = primaryTodayLog.filter((e) => {
+    const linked = outcomeUpdatesByTxId.get(e.id);
+    return e.decision === "blocked" || linked?.outcome === "denied";
+  }).length;
+  
+  // Daily spend progress bar
+  const dailySpendProgress = rules.dailyLimit > 0 ? Math.min((dailySpent / rules.dailyLimit) * 100, 100) : 0;
+  
+  // Saved via recovery: sum of savedAmount across recovered transactions today
+  const savedViaRecovery = primaryTodayLog
+    .filter((e) => e.decision === "recovered" && e.savedAmount)
+    .reduce((sum, e) => sum + (e.savedAmount || 0), 0);
 
   const [drillDown, setDrillDown] = useState<{
     type: "requests" | "approved" | "approvals" | "blocked" | "recovered";
@@ -542,11 +551,25 @@ function StatDrillDownModal({
   onOpenChat: () => void;
 }) {
   const filteredEntries = useMemo(() => {
-    if (drillDown.type === "approved") return todayLog.filter((e) => e.decision === "approved");
-    if (drillDown.type === "blocked") return todayLog.filter((e) => e.decision === "blocked");
-    if (drillDown.type === "recovered") return todayLog.filter((e) => e.decision === "recovered");
-    return todayLog;
-  }, [drillDown.type, todayLog]);
+    // Only primary purchase requests should appear in drilldown lists (outcome_updates are linked delta blocks)
+    const primary = todayLog.filter((e) => e.type !== "outcome_update");
+    if (drillDown.type === "approved") {
+      return primary.filter((e) => {
+        const linked = outcomeUpdatesByTxId.get(e.id);
+        return e.decision === "approved" || linked?.outcome === "approved";
+      });
+    }
+    if (drillDown.type === "blocked") {
+      return primary.filter((e) => {
+        const linked = outcomeUpdatesByTxId.get(e.id);
+        return e.decision === "blocked" || linked?.outcome === "denied";
+      });
+    }
+    if (drillDown.type === "recovered") {
+      return primary.filter((e) => e.decision === "recovered");
+    }
+    return primary;
+  }, [drillDown.type, todayLog, outcomeUpdatesByTxId]);
 
   const badgeStyles = {
     blue: "bg-brand-blue/10 text-brand-blue border-brand-blue/20",
@@ -720,6 +743,10 @@ function StatDrillDownModal({
             <div className="space-y-2.5">
               {filteredEntries.map((entry) => {
                 const linkedOutcome = outcomeUpdatesByTxId.get(entry.id);
+                const displayDecision = (entry.decision || (entry as any).outcome || "PENDING").toString();
+                const isApproved = displayDecision.toLowerCase() === "approved" || linkedOutcome?.outcome === "approved";
+                const isBlocked = displayDecision.toLowerCase() === "blocked" || linkedOutcome?.outcome === "denied";
+
                 return (
                   <div
                     key={entry.id}
@@ -729,24 +756,36 @@ function StatDrillDownModal({
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-sm font-semibold text-brand-navy group-hover:text-brand-blue transition">
-                          {entry.product}
+                          {entry.product || "Purchase Request"}
                         </span>
                         <span
                           className={cn(
                             "rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                            entry.decision === "approved"
+                            isApproved
                               ? "bg-success/10 text-success"
-                              : entry.decision === "blocked"
+                              : isBlocked
                               ? "bg-destructive/10 text-destructive"
-                              : entry.decision === "recovered"
+                              : displayDecision.toLowerCase() === "recovered"
                               ? "bg-brand-blue/10 text-brand-blue"
-                              : entry.decision === "escalated"
+                              : displayDecision.toLowerCase() === "escalated"
                               ? "bg-warning/10 text-warning"
                               : "bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400"
                           )}
                         >
-                          {entry.decision.toUpperCase()}
+                          {displayDecision.toUpperCase()}
                         </span>
+                        {linkedOutcome && (
+                          <span
+                            className={cn(
+                              "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                              linkedOutcome.outcome === "approved"
+                                ? "bg-success/15 text-success border border-success/30"
+                                : "bg-destructive/15 text-destructive border border-destructive/30"
+                            )}
+                          >
+                            RESOLVED: {linkedOutcome.outcome.toUpperCase()}
+                          </span>
+                        )}
                         {entry.savedAmount ? (
                           <span className="rounded-full bg-brand-blue/15 px-2 py-0.5 text-[10px] font-bold text-brand-blue font-mono">
                             Saved ₹{entry.savedAmount.toLocaleString("en-IN")}
@@ -3160,7 +3199,8 @@ function VerdictDetailModal({
     recovered: ["Recovered", "text-brand-blue", "bg-brand-blue/10", "border-brand-blue", RefreshCw],
     enhanced: ["Enhanced", "text-indigo-600 dark:text-indigo-400", "bg-indigo-50 dark:bg-indigo-950/40", "border-indigo-400", Sparkles],
   };
-  const [label, textCol, bgCol, , Icon] = (config as Record<string, any>)[entry.decision] || [
+  const decisionKey = (entry.decision || (entry as any).outcome || "unknown").toLowerCase();
+  const [label, textCol, bgCol, , Icon] = (config as Record<string, any>)[decisionKey] || [
     "Unknown",
     "text-muted-foreground",
     "bg-muted",
@@ -3411,8 +3451,9 @@ function VerdictChainRow({
     recovered: ["Recovered", "text-brand-blue", "bg-brand-blue/10", RefreshCw, "border-brand-blue"],
     enhanced: ["Enhanced", "text-indigo-600 dark:text-indigo-400", "bg-indigo-50 dark:bg-indigo-950/40", Sparkles, "border-indigo-400"],
   };
+  const decisionKey = (entry.decision || entry.outcome || (entry.type === "outcome_update" ? "approved" : "unknown")).toLowerCase();
   const itemConfig =
-    (config as Record<string, any>)[entry.decision] || [
+    (config as Record<string, any>)[decisionKey] || [
       "Unknown",
       "text-muted-foreground",
       "bg-muted",
