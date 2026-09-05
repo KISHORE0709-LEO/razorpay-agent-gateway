@@ -9,7 +9,7 @@ import {
 } from "react";
 import { ApprovalItem, AuditEntry, Decision, Product, Rules } from "./types";
 import { db } from "./firebase";
-import { doc, collection, onSnapshot } from "firebase/firestore";
+import { doc, collection, onSnapshot, getDocs, deleteDoc } from "firebase/firestore";
 import { calculateTodayApprovedSpend } from "@shared/api";
 import { apiUrl } from "./api";
 
@@ -56,6 +56,7 @@ export interface FirewallStore {
   approvals: any[];
   dailySpent: number;
   resolveApproval: (id: string, approve: boolean) => Promise<SubmitResult | undefined>;
+  resetDailySpend: () => Promise<{ success: boolean; deletedCount: number }>;
 
   submitRequest: (
     product: Product,
@@ -153,10 +154,77 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
     return () => unsub();
   }, []);
 
-  const dailySpent = useMemo(
-    () => calculateTodayApprovedSpend(auditLog),
-    [auditLog],
-  );
+  const [dailySpentFromDocs, setDailySpentFromDocs] = useState<number | null>(null);
+
+  useEffect(() => {
+    const spendRef = collection(db, "merchants/demo_merchant/dailySpend");
+    const unsub = onSnapshot(
+      spendRef,
+      (snapshot) => {
+        const todayStr = new Date().toISOString().split("T")[0];
+        let total = 0;
+        snapshot.forEach((d) => {
+          const data = d.data();
+          if (data.date === todayStr || d.id.endsWith(`_${todayStr}`)) {
+            total += Number(data.amount || 0);
+          }
+        });
+        setDailySpentFromDocs(total);
+      },
+      (error) => {
+        console.error("dailySpend snapshot listener error:", error);
+      }
+    );
+
+    return () => unsub();
+  }, []);
+
+  const dailySpent = useMemo(() => {
+    if (dailySpentFromDocs !== null) {
+      return dailySpentFromDocs;
+    }
+    return calculateTodayApprovedSpend(auditLog);
+  }, [dailySpentFromDocs, auditLog]);
+
+  const resetDailySpend = useCallback(async () => {
+    const todayStr = new Date().toISOString().split("T")[0];
+    let count = 0;
+
+    try {
+      const spendRef = collection(db, "merchants/demo_merchant/dailySpend");
+      const snap = await getDocs(spendRef);
+      const deletePromises: Promise<void>[] = [];
+      snap.forEach((docSnap) => {
+        const data = docSnap.data();
+        if (data.date === todayStr || docSnap.id.endsWith(`_${todayStr}`)) {
+          count++;
+          deletePromises.push(deleteDoc(doc(db, "merchants/demo_merchant/dailySpend", docSnap.id)));
+        }
+      });
+      await Promise.all(deletePromises);
+    } catch (err) {
+      console.warn("Direct Firestore deletion of dailySpend failed:", err);
+    }
+
+    try {
+      const res = await fetch(apiUrl("/api/rules/reset-daily-spend"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ merchantId: "demo_merchant" }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.deletedCount !== undefined) {
+          count = Math.max(count, data.deletedCount);
+        }
+      }
+    } catch (err) {
+      console.warn("API reset-daily-spend call error:", err);
+    }
+
+    setDailySpentFromDocs(0);
+    return { success: true, deletedCount: count };
+  }, []);
 
   const login = useCallback((email: string) => {
     sessionStorage.setItem("sentrypay-session", "active");
@@ -381,6 +449,7 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
     auditLog,
     approvals,
     dailySpent,
+    resetDailySpend,
     submitRequest,
     sendChatRequest,
     resolveApproval,

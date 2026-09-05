@@ -135,4 +135,11 @@ export function calculateTodayApprovedSpend(entries: Array<{
   return total;
 }
 
+export interface ResetDailySpendResponse {
+  success: boolean;
+  deletedCount: number;
+  deletedIds: string[];
+  merchantId: string;
+}
+
 

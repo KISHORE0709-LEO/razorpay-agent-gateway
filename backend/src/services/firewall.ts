@@ -1,5 +1,5 @@
 import { db } from "../firebase";
-import { collection, doc, getDoc, getDocFromServer, getDocs, limit, orderBy, query, setDoc, where, addDoc } from "firebase/firestore";
+import { collection, doc, getDoc, getDocFromServer, getDocs, limit, orderBy, query, setDoc, where, addDoc, deleteDoc } from "firebase/firestore";
 import * as crypto from "crypto";
 import { createRazorpayOrder } from "./razorpay";
 import {
@@ -21,13 +21,41 @@ export const COMPLEMENTARY_CATEGORIES: Record<string, string[]> = {
 };
 
 export async function getMerchantTodayApprovedSpend(merchantId: string): Promise<number> {
-  const txnsRef = collection(db, `merchants/${merchantId}/transactions`);
-  const snap = await getDocs(txnsRef);
-  const entries: any[] = [];
+  const todayStr = new Date().toISOString().split("T")[0];
+  const spendRef = collection(db, `merchants/${merchantId}/dailySpend`);
+  const snap = await getDocs(spendRef);
+  let total = 0;
   snap.forEach((d) => {
-    entries.push(d.data());
+    const data = d.data();
+    if (data.date === todayStr || d.id.endsWith(`_${todayStr}`)) {
+      total += Number(data.amount || 0);
+    }
   });
-  return calculateTodayApprovedSpend(entries);
+  return total;
+}
+
+export async function resetMerchantDailySpend(
+  merchantId: string = "demo_merchant"
+): Promise<{ deletedCount: number; deletedIds: string[]; merchantId: string }> {
+  const todayStr = new Date().toISOString().split("T")[0];
+  const spendRef = collection(db, `merchants/${merchantId}/dailySpend`);
+  const snap = await getDocs(spendRef);
+
+  const deletedIds: string[] = [];
+  const deletePromises: Promise<void>[] = [];
+
+  snap.forEach((docSnap) => {
+    const data = docSnap.data();
+    const id = docSnap.id;
+    // Strictly target today's dailySpend records only - do NOT touch past days!
+    if (data.date === todayStr || id.endsWith(`_${todayStr}`)) {
+      deletedIds.push(id);
+      deletePromises.push(deleteDoc(doc(db, `merchants/${merchantId}/dailySpend/${id}`)));
+    }
+  });
+
+  await Promise.all(deletePromises);
+  return { deletedCount: deletedIds.length, deletedIds, merchantId };
 }
 
 export function computeTxnHash(
@@ -343,11 +371,14 @@ export async function evaluatePurchaseRequest(
   if (decision === "approved") {
     const dateKey = new Date().toISOString().split("T")[0];
     const dailySpendRef = doc(db, `merchants/${merchantId}/dailySpend/${agentId}_${dateKey}`);
-    const newSpent = todaySpent + requestedAmount;
+    const spendSnap = await getDoc(dailySpendRef);
+    const currentSpent = spendSnap.exists() ? Number(spendSnap.data()?.amount || 0) : 0;
+    const currentCount = spendSnap.exists() ? Number(spendSnap.data()?.count || 0) : 0;
     await setDoc(dailySpendRef, {
       agentId,
       date: dateKey,
-      amount: newSpent,
+      amount: currentSpent + requestedAmount,
+      count: currentCount + 1,
       updatedAt: new Date().toISOString(),
     }, { merge: true });
   }

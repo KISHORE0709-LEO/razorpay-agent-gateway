@@ -39,6 +39,7 @@ import {
   Sparkles,
   Trash2,
   TrendingUp,
+  RotateCcw,
   User,
   X,
   Zap,
@@ -194,7 +195,34 @@ function Overview({
   onTab: (tab: Tab) => void;
   onNavigateToAudit?: (filter?: string) => void;
 }) {
-  const { rules, dailySpent, auditLog, approvals, resolveApproval } = useFirewall();
+  const { rules, dailySpent, auditLog, approvals, resolveApproval, resetDailySpend } = useFirewall();
+  const [isResettingSpend, setIsResettingSpend] = useState(false);
+  const [resetToast, setResetToast] = useState<string | null>(null);
+
+  const isDev = Boolean(
+    import.meta.env.DEV ||
+    (typeof window !== "undefined" && (
+      window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1" ||
+      window.location.search.includes("dev")
+    ))
+  );
+
+  const handleResetSpend = async () => {
+    if (isResettingSpend) return;
+    setIsResettingSpend(true);
+    try {
+      const res = await resetDailySpend();
+      setResetToast(`Reset today's spend counter to ₹0 (${res.deletedCount} dailySpend record${res.deletedCount === 1 ? "" : "s"} cleared)`);
+      setTimeout(() => setResetToast(null), 5000);
+    } catch (err: any) {
+      console.error("Failed to reset daily spend:", err);
+      setResetToast("Failed to reset spend. Please try again.");
+      setTimeout(() => setResetToast(null), 4000);
+    } finally {
+      setIsResettingSpend(false);
+    }
+  };
   
   // Group outcome_updates with their original parent transactions
   const outcomeUpdatesByTxId = useMemo(() => {
@@ -260,10 +288,41 @@ function Overview({
           <p className="text-sm text-muted-foreground">Good morning, merchant</p>
           <h2 className="mt-1 text-2xl font-bold tracking-tight text-brand-navy sm:text-3xl">Your firewall at a glance</h2>
         </div>
-        <div className="font-mono text-xs text-muted-foreground">
-          LIVE • {new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+        <div className="flex items-center gap-3">
+          {isDev && (
+            <button
+              type="button"
+              id="btn-reset-daily-spend"
+              onClick={handleResetSpend}
+              disabled={isResettingSpend}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-medium rounded-lg border border-amber-300/80 bg-amber-50 text-amber-900 hover:bg-amber-100 hover:border-amber-400 transition shadow-xs cursor-pointer"
+              title="Dev testing: clear today's dailySpend documents so tests start from a clean ₹0 daily spend without inflating limit"
+            >
+              <RotateCcw className={`h-3.5 w-3.5 ${isResettingSpend ? "animate-spin text-amber-700" : "text-amber-700"}`} />
+              {isResettingSpend ? "Resetting spend..." : "Reset today's spend"}
+            </button>
+          )}
+          <div className="font-mono text-xs text-muted-foreground">
+            LIVE • {new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+          </div>
         </div>
       </div>
+
+      {resetToast && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs text-emerald-900 flex items-center justify-between animate-in fade-in slide-in-from-top-1 duration-200 shadow-xs">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+            <span className="font-medium">{resetToast}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setResetToast(null)}
+            className="text-emerald-700 hover:text-emerald-900 font-bold ml-3 cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <Stat
@@ -370,6 +429,24 @@ function Overview({
               <span>₹{dailySpent.toLocaleString("en-IN")} spent</span>
               <span>Limit: ₹{rules.dailyLimit.toLocaleString("en-IN")}</span>
             </div>
+            {isDev && (
+              <div className="mt-2 flex justify-end">
+                <button
+                  type="button"
+                  id="btn-reset-daily-spend-card"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleResetSpend();
+                  }}
+                  disabled={isResettingSpend}
+                  className="text-[10px] font-mono font-medium text-amber-700 hover:text-amber-900 hover:underline inline-flex items-center gap-1 transition cursor-pointer"
+                  title="Dev testing: clear today's dailySpend documents"
+                >
+                  <RotateCcw className={`h-2.5 w-2.5 ${isResettingSpend ? "animate-spin text-amber-800" : ""}`} />
+                  Reset today's spend
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

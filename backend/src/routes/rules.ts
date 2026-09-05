@@ -69,3 +69,19 @@ export const handleGetPolicyStrategies = async (req: Request, res: Response): Pr
   }
 };
 
+export const handleResetDailySpend = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const merchantId = (req.body?.merchantId as string) || (req.query?.merchantId as string) || "demo_merchant";
+    const { resetMerchantDailySpend } = await import("../services/firewall");
+    const result = await resetMerchantDailySpend(merchantId);
+    res.json({
+      success: true,
+      message: `Reset today's daily spend counter to ₹0 (${result.deletedCount} dailySpend documents removed).`,
+      ...result,
+    });
+  } catch (error: any) {
+    console.error("Error resetting today's spend:", error);
+    res.status(500).json({ error: error.message || "Failed to reset daily spend" });
+  }
+};
+
