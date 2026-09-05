@@ -72,9 +72,8 @@ const NAV = [
   { id: "approvals", label: "Approval Queue", icon: Clock3 },
   { id: "campaigns", label: "Campaigns", icon: Sparkles },
   { id: "audit", label: "Verdict Chain", icon: Activity },
-  { id: "settings", label: "Merchant Profile", icon: Building2 },
 ] as const;
-type Tab = (typeof NAV)[number]["id"];
+type Tab = (typeof NAV)[number]["id"] | "settings";
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -121,17 +120,27 @@ export default function Dashboard() {
         <div className="mt-auto border-t border-white/10 p-4">
           <button 
             onClick={() => setTab("settings")}
-            className="mb-3 flex w-full items-center gap-3 rounded-lg bg-white/5 p-3 text-left transition hover:bg-white/10 cursor-pointer group"
+            className={cn(
+              "mb-3 flex w-full items-center gap-3 rounded-lg p-3 text-left transition cursor-pointer group",
+              tab === "settings"
+                ? "bg-brand-blue text-white shadow-lg shadow-brand-blue/20 ring-1 ring-white/20"
+                : "bg-white/5 hover:bg-white/10 text-white"
+            )}
             title="Edit Merchant Profile & Settings"
           >
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-blue/20 text-xs font-semibold text-brand-blue group-hover:bg-brand-blue group-hover:text-white transition">
+            <div className={cn(
+              "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition",
+              tab === "settings"
+                ? "bg-white text-brand-navy font-bold shadow-xs"
+                : "bg-brand-blue/20 text-brand-blue group-hover:bg-brand-blue group-hover:text-white"
+            )}>
               {merchantEmail?.[0]?.toUpperCase() ?? "M"}
             </div>
             <div className="min-w-0 flex-1">
               <div className="truncate text-xs font-medium text-white">{merchantEmail}</div>
-              <div className="text-[10px] text-white/40 group-hover:text-brand-blue/80 transition">Merchant Settings · Edit</div>
+              <div className={cn("text-[10px] transition", tab === "settings" ? "text-white/80" : "text-white/40 group-hover:text-brand-blue/80")}>Merchant Settings · Edit</div>
             </div>
-            <ChevronRight className="h-3.5 w-3.5 text-white/30 group-hover:text-white group-hover:translate-x-0.5 transition" />
+            <ChevronRight className={cn("h-3.5 w-3.5 transition", tab === "settings" ? "text-white translate-x-0.5" : "text-white/30 group-hover:text-white group-hover:translate-x-0.5")} />
           </button>
           <button onClick={signOut} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-white/45 transition hover:bg-white/5 hover:text-white"><LogOut className="h-4 w-4" />Sign out</button>
         </div>
