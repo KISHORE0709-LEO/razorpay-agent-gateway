@@ -1,4 +1,5 @@
 import { Sparkles, Github, Linkedin, Globe, Twitter, Mail } from "lucide-react";
+import devAvatar from "@/assets/17.png";
 
 export function AboutMeSection() {
   return (
@@ -30,7 +31,7 @@ export function AboutMeSection() {
             <div className="w-full h-full rounded-full p-1 bg-gradient-to-tr from-[#0D94FB] via-[#2dd4bf] to-[#10b981] shadow-[0_0_28px_rgba(45,212,191,0.35)]">
               <div className="w-full h-full rounded-full overflow-hidden bg-[#0A192F] border-4 border-[#2dd4bf]">
                 <img
-                  src="/17.png"
+                  src={devAvatar}
                   alt="M Kishore - Developer"
                   className="w-full h-full object-cover object-center transform transition-transform duration-500 hover:scale-110"
                 />

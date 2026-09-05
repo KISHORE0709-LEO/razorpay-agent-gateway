@@ -7,6 +7,9 @@ export default defineConfig({
   server: {
     host: "::",
     port: 5173,
+    watch: {
+      ignored: ["**/node_modules/**", "**/.git/**", "**/public/**"],
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:8080',
