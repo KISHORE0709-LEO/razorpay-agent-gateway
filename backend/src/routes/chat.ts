@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { evaluatePurchaseRequest } from "../services/firewall";
 import { db } from "../firebase";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, getDocs, doc, getDocFromServer } from "firebase/firestore";
 import Fuse from "fuse.js";
 
 interface ParsedIntent {
@@ -19,6 +19,7 @@ function buildProductKeywords(p: any): string {
   if (name.includes("watch")) kw.push("smartwatch", "smart watch", "fitness watch", "wearable", "wrist watch");
   if (name.includes("earbuds")) kw.push("earbuds", "earphones", "ear buds", "airpods", "tws", "wireless earphones");
   if (name.includes("headphones")) kw.push("headphones", "headset", "over ear headphones");
+  if (name.includes("speaker")) kw.push("speaker", "bluetooth speaker", "audio speaker", "sound");
   if (name.includes("shoes")) kw.push("running shoes", "shoes", "sneakers", "footwear", "trainers", "sports shoes");
   if (name.includes("shirt")) kw.push("shirt", "casual shirt", "tshirt", "t-shirt", "clothing", "apparel");
   if (name.includes("bottle")) kw.push("water bottle", "flask", "sipper", "bottle");
@@ -162,12 +163,12 @@ export const handleChat = async (req: Request, res: Response): Promise<void> => 
       intent = fallbackIntentParse(message);
     }
 
-    // 3. Handle non-purchase conversational messages gracefully
-    // Do NOT run the firewall or write any transaction/audit records
     if (!intent.isPurchaseIntent) {
+      const replyText = intent.conversationalReply || "Hi! I am your AI Buyer. Tell me what product you'd like to purchase and I will check it against our firewall rules.";
       res.json({
         decision: "conversational",
-        message: intent.conversationalReply || "Hi! I am your AI Buyer. Tell me what product you'd like to purchase and I will check it against our firewall rules."
+        message: replyText,
+        conversationalReply: replyText,
       });
       return;
     }
@@ -212,6 +213,12 @@ export const handleChat = async (req: Request, res: Response): Promise<void> => 
       }
       if (t.includes("earphones") || t.includes("earbuds")) {
         t = "wireless bluetooth earbuds " + t;
+      }
+      if (t.includes("headphones") || t.includes("headset")) {
+        t = "noise cancelling headphones " + t;
+      }
+      if (t.includes("speaker")) {
+        t = "premium bluetooth speaker " + t;
       }
       if (t.includes("sneakers") || t.includes("shoes")) {
         t = "running shoes " + t;
@@ -273,23 +280,39 @@ export const handleChat = async (req: Request, res: Response): Promise<void> => 
 
     const matchedProduct = bestMatchItem;
 
-    // 7. CRITICAL: Evaluate matched product using REAL catalog price through the shared Decision Engine
-    // Do not use the user's guessed/stated price for the firewall decision
+    // 7. Evaluate matched product through the shared Decision Engine
+    // If the user explicitly stated a higher budget that breaches the merchant's per-order cap (e.g. "Buy running shoes for 8000"),
+    // the agent is requesting that higher amount, which the firewall intercepts to trigger the recovery flow.
+    // Otherwise, evaluate using the catalog product's real price.
     const realPrice = matchedProduct.price;
     const statedBudget = intent.budget;
 
+    let evaluationAmount = realPrice;
+    if (statedBudget && statedBudget > realPrice) {
+      try {
+        const rulesRef = doc(db, `merchants/${merchantId}/rules/current`);
+        const rulesSnap = await getDocFromServer(rulesRef);
+        const maxOrder = rulesSnap.exists() ? Number(rulesSnap.data().maxOrderAmount || 5000) : 5000;
+        if (statedBudget > maxOrder) {
+          evaluationAmount = statedBudget;
+        }
+      } catch (err) {
+        console.warn("Could not check rules maxOrderAmount for chat:", err);
+      }
+    }
+
     let priceNote = "";
-    if (statedBudget && statedBudget !== realPrice) {
+    if (statedBudget && statedBudget !== realPrice && evaluationAmount === realPrice) {
       priceNote = `Stated budget was ₹${statedBudget.toLocaleString("en-IN")}, but catalog price is ₹${realPrice.toLocaleString("en-IN")}. Policy evaluated using real catalog price.`;
     }
 
     // Call the ONE shared decision engine evaluatePurchaseRequest
-    const result = await evaluatePurchaseRequest(merchantId, agentId, matchedProduct.id, realPrice);
+    const result = await evaluatePurchaseRequest(merchantId, agentId, matchedProduct.id, evaluationAmount);
 
     res.json({
       ...result,
       parsedProduct: matchedProduct,
-      requestedAmount: realPrice,
+      requestedAmount: evaluationAmount,
       statedPrice: statedBudget || undefined,
       priceNote: priceNote || undefined,
       reason: priceNote ? `${result.reason} (${priceNote})` : result.reason

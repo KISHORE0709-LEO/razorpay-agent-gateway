@@ -57,6 +57,7 @@ export interface FirewallStore {
   dailySpent: number;
   resolveApproval: (id: string, approve: boolean) => Promise<SubmitResult | undefined>;
   resetDailySpend: () => Promise<{ success: boolean; deletedCount: number }>;
+  resetAgentTrust: (agentId?: string) => Promise<{ success: boolean }>;
 
   submitRequest: (
     product: Product,
@@ -224,6 +225,36 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
 
     setDailySpentFromDocs(0);
     return { success: true, deletedCount: count };
+  }, []);
+
+  const resetAgentTrust = useCallback(async (agentId: string = AGENT_ID) => {
+    try {
+      const trustRef = doc(db, "merchants/demo_merchant/agentTrust", agentId);
+      await setDoc(trustRef, {
+        agentId,
+        score: 50,
+        totalRequests: 0,
+        approvedCount: 0,
+        blockedCount: 0,
+        recoveredCount: 0,
+        deniedEscalations: 0,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.warn("Direct Firestore reset of agentTrust failed:", err);
+    }
+
+    try {
+      await fetch(apiUrl("/api/rules/reset-agent-trust"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ merchantId: "demo_merchant", agentId }),
+      });
+    } catch (err) {
+      console.warn("API reset-agent-trust call error:", err);
+    }
+
+    return { success: true };
   }, []);
 
   const login = useCallback((email: string) => {
@@ -450,6 +481,7 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
     approvals,
     dailySpent,
     resetDailySpend,
+    resetAgentTrust,
     submitRequest,
     sendChatRequest,
     resolveApproval,

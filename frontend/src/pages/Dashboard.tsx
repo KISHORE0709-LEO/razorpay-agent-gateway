@@ -2178,40 +2178,40 @@ function formatOrderTime(isoString?: string) {
 const PROMPT_SUGGESTIONS = [
   {
     icon: "🎧",
-    label: "Earbuds < ₹2,000",
+    label: "Earbuds ₹1,499",
     query: "Buy wireless earbuds under 2000",
-    description: "In-policy auto-purchase via Razorpay Orders API",
+    description: "In-policy auto-purchase (within ₹2,000 threshold)",
     badge: "Auto Approved",
     badgeClass: "text-emerald-700 bg-emerald-50 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800",
   },
   {
-    icon: "👟",
-    label: "Nike Shoes ₹8,000",
-    query: "Buy running shoes for 8000",
-    description: "Exceeds item limit, tests in-policy recovery offer",
-    badge: "Recovery Offer",
-    badgeClass: "text-brand-blue bg-brand-blue/10 border-brand-blue/20",
-  },
-  {
-    icon: "📱",
-    label: "Apple iPad ₹55,000",
-    query: "Buy Apple iPad Air for 55000",
-    description: "High-value spend, tests human approval queue",
+    icon: "⌚",
+    label: "Smartwatch ₹2,999",
+    query: "Buy smartwatch under 3500",
+    description: "Above ₹2,000 threshold, tests human approval queue",
     badge: "Escalation",
     badgeClass: "text-amber-700 bg-amber-50 border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800",
   },
   {
-    icon: "⌚",
-    label: "Smartwatch < ₹3,500",
-    query: "Buy smartwatch under 3500",
-    description: "Evaluates velocity limits and merchant budget",
-    badge: "In Catalog",
-    badgeClass: "text-indigo-700 bg-indigo-50 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-400 dark:border-indigo-800",
+    icon: "🎧",
+    label: "Headphones ₹7,999",
+    query: "Buy noise cancelling headphones",
+    description: "Exceeds ₹5,000 per-order limit, tests in-policy recovery offer",
+    badge: "Recovery Offer",
+    badgeClass: "text-brand-blue bg-brand-blue/10 border-brand-blue/20",
+  },
+  {
+    icon: "🛡️",
+    label: "Blocked Category",
+    query: "Buy gold diamond jewelry",
+    description: "Category not in allow-list, tests automated policy block",
+    badge: "Policy Block",
+    badgeClass: "text-rose-700 bg-rose-50 border-rose-200 dark:bg-rose-950/40 dark:text-rose-400 dark:border-rose-800",
   },
 ];
 
 function BuyerChat() {
-  const { sendChatRequest, submitRequest } = useFirewall();
+  const { sendChatRequest, submitRequest, resetAgentTrust } = useFirewall();
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(() => {
     return sessionStorage.getItem("sentrypay-chat-session");
@@ -2219,8 +2219,23 @@ function BuyerChat() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
+  const [resettingTrust, setResettingTrust] = useState(false);
+  const [trustResetSuccess, setTrustResetSuccess] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  async function handleResetTrust() {
+    setResettingTrust(true);
+    try {
+      await resetAgentTrust(AGENT_ID);
+      setTrustResetSuccess(true);
+      setTimeout(() => setTrustResetSuccess(false), 3000);
+    } catch (err) {
+      console.error("Failed to reset agent trust:", err);
+    } finally {
+      setResettingTrust(false);
+    }
+  }
 
   // Subscribe to real-time chat sessions from Firestore / backend
   useEffect(() => {
@@ -2777,6 +2792,16 @@ function BuyerChat() {
                   {AGENT_ID}
                 </span>
                 <AgentTrustBadge agentId={AGENT_ID} />
+                <button
+                  type="button"
+                  onClick={handleResetTrust}
+                  disabled={resettingTrust}
+                  title="Reset agent trust score to 50 (Neutral)"
+                  className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium text-muted-foreground hover:text-brand-navy hover:bg-muted transition cursor-pointer disabled:opacity-50"
+                >
+                  <RotateCcw className={cn("h-3 w-3", resettingTrust && "animate-spin")} />
+                  <span className="hidden md:inline">{trustResetSuccess ? "Reset to 50!" : "Reset Trust"}</span>
+                </button>
               </div>
             </div>
           </div>

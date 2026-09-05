@@ -85,3 +85,20 @@ export const handleResetDailySpend = async (req: Request, res: Response): Promis
   }
 };
 
+export const handleResetAgentTrust = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const merchantId = (req.body?.merchantId as string) || (req.query?.merchantId as string) || "demo_merchant";
+    const agentId = (req.body?.agentId as string) || (req.query?.agentId as string) || "agt_live_7f3c9e";
+    const { resetAgentTrust } = await import("../services/agentTrust");
+    const result = await resetAgentTrust(merchantId, agentId);
+    res.json({
+      success: true,
+      message: `Reset agent ${agentId} trust score to 50 (Neutral).`,
+      trust: result,
+    });
+  } catch (error: any) {
+    console.error("Error resetting agent trust:", error);
+    res.status(500).json({ error: error.message || "Failed to reset agent trust" });
+  }
+};
+

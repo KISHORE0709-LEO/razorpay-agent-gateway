@@ -113,3 +113,20 @@ export async function updateAgentTrustOnTransaction(
 
   return updatedProfile;
 }
+
+export async function resetAgentTrust(merchantId: string, agentId: string): Promise<AgentTrustProfile> {
+  const profile: AgentTrustProfile = {
+    agentId,
+    score: DEFAULT_TRUST_SCORE,
+    totalRequests: 0,
+    approvedCount: 0,
+    blockedCount: 0,
+    recoveredCount: 0,
+    deniedEscalations: 0,
+    updatedAt: new Date().toISOString(),
+  };
+
+  const trustRef = doc(db, `merchants/${merchantId}/agentTrust/${agentId}`);
+  await setDoc(trustRef, profile);
+  return profile;
+}
