@@ -17,6 +17,10 @@ export default defineConfig({
   build: {
     outDir: "dist",
   },
+  optimizeDeps: {
+    include: ["recharts", "react-is"],
+    force: true,
+  },
   plugins: [react()],
   resolve: {
     alias: {
