@@ -39,7 +39,7 @@ import {
 import { cn } from "@/lib/utils";
 import { CATEGORIES } from "@/lib/catalog";
 import { AGENT_ID, useFirewall, SubmitResult } from "@/lib/store";
-import { Decision, Product, Rules, Campaign } from "@/lib/types";
+import { Decision, Product, Rules, Campaign, AuditEntry } from "@/lib/types";
 import { GENESIS_HASH, computeTxnHash, computeEntryHash, shortHash } from "@/lib/hash";
 import { AgentTrustBadge } from "@/components/AgentTrustBadge";
 import { OverviewCharts } from "@/components/OverviewCharts";
@@ -67,6 +67,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { isLoggedIn, merchantEmail, logout } = useFirewall();
   const [tab, setTab] = useState<Tab>("overview");
+  const [auditFilter, setAuditFilter] = useState<string>("all");
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   useEffect(() => {
@@ -79,6 +80,11 @@ export default function Dashboard() {
     logout();
     navigate("/");
   }
+
+  const handleNavigateToAudit = (filter?: string) => {
+    setAuditFilter(filter || "all");
+    setTab("audit");
+  };
 
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
@@ -110,13 +116,13 @@ export default function Dashboard() {
           <div className="flex items-center gap-3"><div className="hidden items-center gap-2 rounded-full border border-success/20 bg-success/10 px-3 py-1.5 text-xs font-medium text-success sm:flex"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-success" />System operational</div><div className="h-8 w-8 rounded-full bg-brand-blue/10 text-center text-xs leading-8 font-semibold text-brand-navy">{merchantEmail?.[0]?.toUpperCase() ?? "M"}</div></div>
         </header>
         <main className={cn("mx-auto w-full max-w-[1500px] flex-1 min-h-0", tab === "chat" ? "p-3 sm:p-4 lg:p-5 flex flex-col overflow-hidden" : "p-5 sm:p-8 overflow-y-auto")}>
-          {tab === "overview" && <Overview onTab={setTab} />}
+          {tab === "overview" && <Overview onTab={setTab} onNavigateToAudit={handleNavigateToAudit} />}
           {tab === "chat" && <BuyerChat />}
           {tab === "rules" && <RulesPanel />}
           {tab === "catalog" && <CatalogPanel />}
           {tab === "approvals" && <ApprovalsPanel />}
           {tab === "campaigns" && <CampaignsPanel />}
-          {tab === "audit" && <AuditPanel />}
+          {tab === "audit" && <AuditPanel initialFilter={auditFilter} onFilterChange={setAuditFilter} />}
         </main>
       </div>
     </div>
@@ -125,8 +131,14 @@ export default function Dashboard() {
 
 function ApprovalCount() { const { approvals } = useFirewall(); return approvals.length > 0 ? <span className="ml-auto rounded-full bg-warning px-1.5 py-0.5 text-[10px] font-bold text-brand-navy">{approvals.length}</span> : null; }
 
-function Overview({ onTab }: { onTab: (tab: Tab) => void }) {
-  const { rules, dailySpent, auditLog, approvals } = useFirewall();
+function Overview({
+  onTab,
+  onNavigateToAudit,
+}: {
+  onTab: (tab: Tab) => void;
+  onNavigateToAudit?: (filter?: string) => void;
+}) {
+  const { rules, dailySpent, auditLog, approvals, resolveApproval } = useFirewall();
   
   const today = new Date().toDateString();
   const todayLog = auditLog.filter((e) => new Date(e.time).toDateString() === today);
@@ -148,113 +160,603 @@ function Overview({ onTab }: { onTab: (tab: Tab) => void }) {
     .filter((e) => e.decision === "recovered" && e.savedAmount)
     .reduce((sum, e) => sum + (e.savedAmount || 0), 0);
 
+  // Group outcome_updates with their original parent transactions
+  const outcomeUpdatesByTxId = useMemo(() => {
+    const map = new Map<string, AuditEntry>();
+    auditLog.forEach((entry) => {
+      if (entry.type === "outcome_update" && entry.relatedTransactionId) {
+        map.set(entry.relatedTransactionId, entry);
+      }
+    });
+    return map;
+  }, [auditLog]);
+
+  const [drillDown, setDrillDown] = useState<{
+    type: "requests" | "approved" | "approvals" | "blocked" | "recovered";
+    title: string;
+    subtitle: string;
+    badge: string;
+    badgeColor: "blue" | "green" | "amber" | "red";
+  } | null>(null);
+
+  const [selectedVerdictEntry, setSelectedVerdictEntry] = useState<{
+    entry: AuditEntry;
+    linkedOutcome?: AuditEntry;
+  } | null>(null);
+
   // For the pulse animation, track the most recent transaction
   const latestTxnId = auditLog.length > 0 ? auditLog[0].id : null;
   const latestDecision = auditLog.length > 0 ? auditLog[0].decision : null;
 
-  return <div className="space-y-7">
-    <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
-      <div>
-        <p className="text-sm text-muted-foreground">Good morning, merchant</p>
-        <h2 className="mt-1 text-2xl font-bold tracking-tight text-brand-navy sm:text-3xl">Your firewall at a glance</h2>
-      </div>
-      <div className="font-mono text-xs text-muted-foreground">
-        LIVE • {new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
-      </div>
-    </div>
-    
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-      <Stat label="Requests today" value={String(requestsToday).padStart(2, "0")} trend="Live stream" icon={Activity} color="blue" />
-      <Stat label="Approved volume" value={`₹${approvedVolume.toLocaleString("en-IN")}`} trend={approvedVolume ? "Completed today" : "Awaiting first request"} icon={CheckCircle2} color="green" />
-      <Stat label="Approval queue" value={String(approvals.length).padStart(2, "0")} trend={approvals.length ? "Needs attention" : "All clear"} icon={Clock3} color="amber" />
-      <Stat label="Blocked requests" value={String(blockedToday).padStart(2, "0")} trend="Protected by rules" icon={Ban} color="red" />
-      
-      <div className="rounded-2xl border border-brand-blue/20 bg-card p-5 flex flex-col justify-between">
-        <div className="flex items-start justify-between">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-blue/10 text-brand-blue">
-            <RefreshCw className="h-4 w-4" />
-          </div>
-          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Saved via recovery</span>
-        </div>
+  return (
+    <div className="space-y-7">
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
         <div>
-          <div className="mt-2 text-2xl font-bold font-mono tracking-tight text-brand-navy">₹{savedViaRecovery.toLocaleString("en-IN")}</div>
-          <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-            <div className="h-full bg-brand-blue transition-all" style={{ width: `${dailySpendProgress}%` }} />
+          <p className="text-sm text-muted-foreground">Good morning, merchant</p>
+          <h2 className="mt-1 text-2xl font-bold tracking-tight text-brand-navy sm:text-3xl">Your firewall at a glance</h2>
+        </div>
+        <div className="font-mono text-xs text-muted-foreground">
+          LIVE • {new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+        </div>
+      </div>
+      
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <Stat
+          label="Requests today"
+          value={String(requestsToday).padStart(2, "0")}
+          trend="Live stream"
+          icon={Activity}
+          color="blue"
+          onClick={() =>
+            setDrillDown({
+              type: "requests",
+              title: "Today's Transaction Requests",
+              subtitle: "All purchase attempts evaluated by SentryPay Firewall today",
+              badge: `${requestsToday} Requests`,
+              badgeColor: "blue",
+            })
+          }
+        />
+        <Stat
+          label="Approved volume"
+          value={`₹${approvedVolume.toLocaleString("en-IN")}`}
+          trend={approvedVolume ? "Completed today" : "Awaiting first request"}
+          icon={CheckCircle2}
+          color="green"
+          onClick={() =>
+            setDrillDown({
+              type: "approved",
+              title: "Approved Purchase Volume",
+              subtitle: "All orders automatically approved within policy limits and confirmed via Razorpay",
+              badge: `₹${approvedVolume.toLocaleString("en-IN")}`,
+              badgeColor: "green",
+            })
+          }
+        />
+        <Stat
+          label="Approval queue"
+          value={String(approvals.length).padStart(2, "0")}
+          trend={approvals.length ? "Needs attention" : "All clear"}
+          icon={Clock3}
+          color="amber"
+          onClick={() =>
+            setDrillDown({
+              type: "approvals",
+              title: "Pending Approval Queue",
+              subtitle: "Requests exceeding agent spending thresholds awaiting merchant sign-off",
+              badge: `${approvals.length} Pending`,
+              badgeColor: "amber",
+            })
+          }
+        />
+        <Stat
+          label="Blocked requests"
+          value={String(blockedToday).padStart(2, "0")}
+          trend="Protected by rules"
+          icon={Ban}
+          color="red"
+          onClick={() =>
+            setDrillDown({
+              type: "blocked",
+              title: "Blocked Purchase Requests",
+              subtitle: "Requests rejected by SentryPay firewall rules (spend limits, disallowed categories, low trust)",
+              badge: `${blockedToday} Blocked`,
+              badgeColor: "red",
+            })
+          }
+        />
+        
+        <div
+          onClick={() =>
+            setDrillDown({
+              type: "recovered",
+              title: "Saved via Autonomous Recovery",
+              subtitle: "Purchases salvaged when an agent accepted a policy-compliant alternative within budget",
+              badge: `₹${savedViaRecovery.toLocaleString("en-IN")} Saved`,
+              badgeColor: "blue",
+            })
+          }
+          className="rounded-2xl border border-brand-blue/20 bg-card p-5 flex flex-col justify-between cursor-pointer hover:border-brand-blue/60 hover:shadow-md transition group"
+        >
+          <div className="flex items-start justify-between">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-blue/10 text-brand-blue group-hover:scale-105 transition">
+              <RefreshCw className="h-4 w-4" />
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground group-hover:text-brand-navy transition">
+                Saved via recovery
+              </span>
+              <ArrowUpRight className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 group-hover:text-brand-blue transition-all transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+            </div>
           </div>
-          <div className="mt-1 flex items-center justify-between text-[10px] text-muted-foreground font-mono">
-            <span>₹{dailySpent.toLocaleString("en-IN")} spent</span>
-            <span>Limit: ₹{rules.dailyLimit.toLocaleString("en-IN")}</span>
+          <div>
+            <div className="mt-2 flex items-baseline justify-between">
+              <div className="text-2xl font-bold font-mono tracking-tight text-brand-navy">
+                ₹{savedViaRecovery.toLocaleString("en-IN")}
+              </div>
+              <span className="text-[10px] font-semibold text-brand-blue opacity-0 group-hover:opacity-100 transition">
+                Inspect ➔
+              </span>
+            </div>
+            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+              <div className="h-full bg-brand-blue transition-all" style={{ width: `${dailySpendProgress}%` }} />
+            </div>
+            <div className="mt-1 flex items-center justify-between text-[10px] text-muted-foreground font-mono">
+              <span>₹{dailySpent.toLocaleString("en-IN")} spent</span>
+              <span>Limit: ₹{rules.dailyLimit.toLocaleString("en-IN")}</span>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-    
-    <OverviewCharts auditLog={auditLog} rules={rules} dailySpent={dailySpent} />
+      
+      <OverviewCharts auditLog={auditLog} rules={rules} dailySpent={dailySpent} />
 
-    <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
-      <section className="rounded-2xl border border-brand-blue/20 bg-card p-6">
-        <div className="flex items-start justify-between">
-          <div>
-            <h3 className="font-semibold text-brand-navy">Firewall activity</h3>
-            <p className="mt-1 text-xs text-muted-foreground">Every request passes through your policy engine</p>
+      <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
+        <section className="rounded-2xl border border-brand-blue/20 bg-card p-6">
+          <div className="flex items-start justify-between">
+            <div>
+              <h3 className="font-semibold text-brand-navy">Firewall activity</h3>
+              <p className="mt-1 text-xs text-muted-foreground">Every request passes through your policy engine</p>
+            </div>
+            <button onClick={() => onTab("chat")} className="text-xs font-semibold text-brand-blue hover:underline">
+              Try a request <ChevronRight className="inline h-3 w-3" />
+            </button>
           </div>
-          <button onClick={() => onTab("chat")} className="text-xs font-semibold text-brand-blue hover:underline">
-            Try a request <ChevronRight className="inline h-3 w-3" />
+          <MiniFlow latestDecision={latestDecision} latestTxnId={latestTxnId} />
+        </section>
+        
+        <section className="rounded-2xl border border-brand-blue/20 bg-card p-6">
+          <div className="flex items-start justify-between">
+            <div>
+              <h3 className="font-semibold text-brand-navy">Active policy</h3>
+              <p className="mt-1 text-xs text-muted-foreground">Synchronized with Firestore rules/current</p>
+            </div>
+            <button onClick={() => onTab("rules")} className="text-xs font-semibold text-brand-blue hover:underline">Edit</button>
+          </div>
+          <div className="mt-6 space-y-4">
+            <RuleLine label="Max order amount" value={`₹${rules.maxOrder.toLocaleString("en-IN")}`} />
+            <RuleLine label="Daily spend limit" value={`₹${rules.dailyLimit.toLocaleString("en-IN")}`} />
+            <RuleLine label="Approval threshold" value={`₹${rules.approvalAbove.toLocaleString("en-IN")}`} />
+            <RuleLine label="Allowed categories" value={rules.categories.join(", ") || "None"} />
+          </div>
+        </section>
+      </div>
+      
+      <section className="rounded-2xl border border-brand-blue/20 bg-card">
+        <div className="flex items-center justify-between border-b border-border px-6 py-4">
+          <div>
+            <h3 className="font-semibold text-brand-navy">Recent decisions</h3>
+            <p className="mt-1 text-xs text-muted-foreground">Live verdict stream</p>
+          </div>
+          <button onClick={() => (onNavigateToAudit ? onNavigateToAudit("all") : onTab("audit"))} className="text-xs font-semibold text-brand-blue">
+            View all <ChevronRight className="inline h-3 w-3" />
           </button>
         </div>
-        <MiniFlow latestDecision={latestDecision} latestTxnId={latestTxnId} />
-      </section>
-      
-      <section className="rounded-2xl border border-brand-blue/20 bg-card p-6">
-        <div className="flex items-start justify-between">
-          <div>
-            <h3 className="font-semibold text-brand-navy">Active policy</h3>
-            <p className="mt-1 text-xs text-muted-foreground">Synchronized with Firestore rules/current</p>
+        {auditLog.length ? (
+          <div className="divide-y divide-border">
+            {auditLog.slice(0, 4).map((entry) => {
+              const linkedOutcome = outcomeUpdatesByTxId.get(entry.id);
+              return (
+                <AuditRow
+                  key={entry.id}
+                  entry={entry}
+                  linkedOutcome={linkedOutcome}
+                  onSelect={() => setSelectedVerdictEntry({ entry, linkedOutcome })}
+                />
+              );
+            })}
           </div>
-          <button onClick={() => onTab("rules")} className="text-xs font-semibold text-brand-blue hover:underline">Edit</button>
-        </div>
-        <div className="mt-6 space-y-4">
-          <RuleLine label="Max order amount" value={`₹${rules.maxOrder.toLocaleString("en-IN")}`} />
-          <RuleLine label="Daily spend limit" value={`₹${rules.dailyLimit.toLocaleString("en-IN")}`} />
-          <RuleLine label="Approval threshold" value={`₹${rules.approvalAbove.toLocaleString("en-IN")}`} />
-          <RuleLine label="Allowed categories" value={rules.categories.join(", ") || "None"} />
-        </div>
+        ) : (
+          <EmptyState icon={Activity} text="No requests yet. Open AI Buyer to simulate your first purchase." action={() => onTab("chat")} actionLabel="Open AI Buyer" />
+        )}
       </section>
-    </div>
-    
-    <section className="rounded-2xl border border-brand-blue/20 bg-card">
-      <div className="flex items-center justify-between border-b border-border px-6 py-4">
-        <div>
-          <h3 className="font-semibold text-brand-navy">Recent decisions</h3>
-          <p className="mt-1 text-xs text-muted-foreground">Live verdict stream</p>
-        </div>
-        <button onClick={() => onTab("audit")} className="text-xs font-semibold text-brand-blue">
-          View all <ChevronRight className="inline h-3 w-3" />
-        </button>
-      </div>
-      {auditLog.length ? (
-        <div className="divide-y divide-border">
-          {auditLog.slice(0, 4).map((entry) => <AuditRow key={entry.id} entry={entry} />)}
-        </div>
-      ) : (
-        <EmptyState icon={Activity} text="No requests yet. Open AI Buyer to simulate your first purchase." action={() => onTab("chat")} actionLabel="Open AI Buyer" />
+
+      {/* Drill-down modal for stat cards */}
+      {drillDown && (
+        <StatDrillDownModal
+          drillDown={drillDown}
+          todayLog={todayLog}
+          approvals={approvals}
+          rules={rules}
+          dailySpent={dailySpent}
+          outcomeUpdatesByTxId={outcomeUpdatesByTxId}
+          onClose={() => setDrillDown(null)}
+          onNavigateToAudit={onNavigateToAudit}
+          onSelectVerdictEntry={(entry, linkedOutcome) => setSelectedVerdictEntry({ entry, linkedOutcome })}
+          onResolveApproval={resolveApproval}
+          onOpenChat={() => onTab("chat")}
+        />
       )}
-    </section>
-  </div>;
+
+      {/* Deep block inspection modal */}
+      {selectedVerdictEntry && (
+        <VerdictDetailModal
+          entry={selectedVerdictEntry.entry}
+          linkedOutcome={selectedVerdictEntry.linkedOutcome}
+          onClose={() => setSelectedVerdictEntry(null)}
+        />
+      )}
+    </div>
+  );
 }
 
-function Stat({ label, value, trend, icon: Icon, color }: { label: string; value: string; trend: string; icon: typeof Activity; color: string }) {
+function Stat({
+  label,
+  value,
+  trend,
+  icon: Icon,
+  color,
+  onClick,
+}: {
+  label: string;
+  value: string;
+  trend: string;
+  icon: typeof Activity;
+  color: string;
+  onClick?: () => void;
+}) {
   return (
-    <div className="rounded-2xl border border-brand-blue/20 bg-card p-5 flex flex-col justify-between h-full">
+    <div
+      onClick={onClick}
+      className={cn(
+        "rounded-2xl border border-brand-blue/20 bg-card p-5 flex flex-col justify-between h-full transition",
+        onClick && "cursor-pointer hover:border-brand-blue/60 hover:shadow-md group"
+      )}
+    >
       <div className="flex items-start justify-between">
-        <div className={cn("flex h-9 w-9 items-center justify-center rounded-xl", color === "blue" ? "bg-brand-blue/10 text-brand-blue" : color === "green" ? "bg-success/10 text-success" : color === "amber" ? "bg-warning/10 text-warning" : "bg-destructive/10 text-destructive")}>
+        <div
+          className={cn(
+            "flex h-9 w-9 items-center justify-center rounded-xl transition",
+            color === "blue"
+              ? "bg-brand-blue/10 text-brand-blue group-hover:scale-105"
+              : color === "green"
+              ? "bg-success/10 text-success group-hover:scale-105"
+              : color === "amber"
+              ? "bg-warning/10 text-warning group-hover:scale-105"
+              : "bg-destructive/10 text-destructive group-hover:scale-105"
+          )}
+        >
           <Icon className="h-4 w-4" />
         </div>
-        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{label}</span>
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground group-hover:text-brand-navy transition">
+            {label}
+          </span>
+          {onClick && (
+            <ArrowUpRight className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 group-hover:text-brand-blue transition-all transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+          )}
+        </div>
       </div>
       <div>
         <div className="mt-5 text-2xl font-bold font-mono tracking-tight text-brand-navy">{value}</div>
-        <div className="mt-1 text-xs text-muted-foreground">{trend}</div>
+        <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
+          <span>{trend}</span>
+          {onClick && (
+            <span className="text-[10px] font-semibold text-brand-blue opacity-0 group-hover:opacity-100 transition">
+              Inspect ➔
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatDrillDownModal({
+  drillDown,
+  todayLog,
+  approvals,
+  rules,
+  dailySpent,
+  outcomeUpdatesByTxId,
+  onClose,
+  onNavigateToAudit,
+  onSelectVerdictEntry,
+  onResolveApproval,
+  onOpenChat,
+}: {
+  drillDown: {
+    type: "requests" | "approved" | "approvals" | "blocked" | "recovered";
+    title: string;
+    subtitle: string;
+    badge: string;
+    badgeColor: "blue" | "green" | "amber" | "red";
+  };
+  todayLog: AuditEntry[];
+  approvals: any[];
+  rules: Rules;
+  dailySpent: number;
+  outcomeUpdatesByTxId: Map<string, AuditEntry>;
+  onClose: () => void;
+  onNavigateToAudit?: (filter?: string) => void;
+  onSelectVerdictEntry: (entry: AuditEntry, linkedOutcome?: AuditEntry) => void;
+  onResolveApproval: (id: string, decision: "approved" | "denied") => void;
+  onOpenChat: () => void;
+}) {
+  const filteredEntries = useMemo(() => {
+    if (drillDown.type === "approved") return todayLog.filter((e) => e.decision === "approved");
+    if (drillDown.type === "blocked") return todayLog.filter((e) => e.decision === "blocked");
+    if (drillDown.type === "recovered") return todayLog.filter((e) => e.decision === "recovered");
+    return todayLog;
+  }, [drillDown.type, todayLog]);
+
+  const badgeStyles = {
+    blue: "bg-brand-blue/10 text-brand-blue border-brand-blue/20",
+    green: "bg-success/10 text-success border-success/20",
+    amber: "bg-warning/10 text-warning border-warning/20",
+    red: "bg-destructive/10 text-destructive border-destructive/20",
+  }[drillDown.badgeColor];
+
+  const filterParam = {
+    requests: "all",
+    approved: "approved",
+    blocked: "blocked",
+    recovered: "recovered",
+    approvals: "escalated",
+  }[drillDown.type];
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
+      onClick={onClose}
+    >
+      <div
+        className="relative flex flex-col w-full max-w-3xl rounded-2xl border border-border bg-card shadow-2xl max-h-[88vh] overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-5 bg-muted/10 shrink-0">
+          <div className="flex items-center gap-3">
+            <div
+              className={cn(
+                "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl font-bold border",
+                badgeStyles
+              )}
+            >
+              {drillDown.type === "approved" ? (
+                <CheckCircle2 className="h-5 w-5 text-success" />
+              ) : drillDown.type === "blocked" ? (
+                <Ban className="h-5 w-5 text-destructive" />
+              ) : drillDown.type === "approvals" ? (
+                <Clock3 className="h-5 w-5 text-warning" />
+              ) : drillDown.type === "recovered" ? (
+                <RefreshCw className="h-5 w-5 text-brand-blue" />
+              ) : (
+                <Activity className="h-5 w-5 text-brand-blue" />
+              )}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base sm:text-lg font-bold text-brand-navy">{drillDown.title}</h3>
+                <span className={cn("rounded-full border px-2.5 py-0.5 text-xs font-bold font-mono", badgeStyles)}>
+                  {drillDown.badge}
+                </span>
+              </div>
+              <p className="mt-0.5 text-xs text-muted-foreground">{drillDown.subtitle}</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                onClose();
+                onNavigateToAudit?.(filterParam);
+              }}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-brand-blue/10 border border-brand-blue/30 px-3 py-1.5 text-xs font-semibold text-brand-blue hover:bg-brand-blue hover:text-white transition cursor-pointer shadow-2xs"
+              title="Open the complete cryptographic Verdict Chain"
+            >
+              <Activity className="h-3.5 w-3.5" />
+              <span>Open in Verdict Chain ➔</span>
+            </button>
+            <button
+              onClick={onClose}
+              className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-brand-navy transition cursor-pointer"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Content Body */}
+        <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-3.5">
+          {drillDown.type === "approvals" ? (
+            approvals.length === 0 ? (
+              <div className="py-12 text-center">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-success/10 text-success mb-3">
+                  <CheckCircle2 className="h-6 w-6" />
+                </div>
+                <h4 className="text-sm font-semibold text-brand-navy">Approval Queue is Clear</h4>
+                <p className="mt-1 text-xs text-muted-foreground max-w-sm mx-auto">
+                  No requests currently require manual review. All purchases within limits were approved autonomously.
+                </p>
+              </div>
+            ) : (
+              approvals.map((item) => {
+                const wouldExceed = rules.dailyLimit > 0 && dailySpent + (item.amount || 0) > rules.dailyLimit;
+                return (
+                  <div
+                    key={item.id}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-warning/30 bg-warning/[0.03] p-4 transition"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-semibold text-brand-navy">{item.product}</span>
+                        <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[10px] font-semibold text-warning">
+                          Approval required
+                        </span>
+                        {wouldExceed && (
+                          <span className="rounded-full bg-destructive/15 px-2 py-0.5 text-[10px] font-semibold text-destructive">
+                            Would exceed daily limit (₹{rules.dailyLimit.toLocaleString("en-IN")})
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        Requested: <span className="font-mono font-bold text-brand-navy">₹{item.amount?.toLocaleString("en-IN")}</span>
+                        {" • "}
+                        <span>{item.reason}</span>
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2 font-mono text-[10px] text-muted-foreground">
+                        <span>{new Date(item.time).toLocaleTimeString("en-IN")}</span>
+                        <span>·</span>
+                        <span className="inline-flex items-center gap-1.5">
+                          <span>agent: {item.agent}</span>
+                          <AgentTrustBadge agentId={item.agent} initialScore={item.agentTrustScore} initialTier={item.agentTrustTier} />
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => onResolveApproval(item.id, "approved")}
+                        className="rounded-lg bg-success px-3 py-1.5 text-xs font-semibold text-white shadow-2xs hover:brightness-105 transition cursor-pointer"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => onResolveApproval(item.id, "denied")}
+                        className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-1.5 text-xs font-semibold text-destructive hover:bg-destructive hover:text-white transition cursor-pointer"
+                      >
+                        Deny
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )
+          ) : filteredEntries.length === 0 ? (
+            <div className="py-12 text-center">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground mb-3">
+                <Activity className="h-6 w-6" />
+              </div>
+              <h4 className="text-sm font-semibold text-brand-navy">No matching transactions today</h4>
+              <p className="mt-1 text-xs text-muted-foreground max-w-sm mx-auto">
+                {drillDown.type === "approved"
+                  ? "No purchases have been approved yet today. Start a shopping request in AI Buyer."
+                  : drillDown.type === "blocked"
+                  ? "No requests have been blocked today. Firewall rules have protected all operations."
+                  : drillDown.type === "recovered"
+                  ? "No purchases saved via recovery today yet."
+                  : "No purchase requests have passed through the firewall today."}
+              </p>
+              <button
+                onClick={() => {
+                  onClose();
+                  onOpenChat();
+                }}
+                className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-brand-blue px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:brightness-105 transition cursor-pointer"
+              >
+                <Bot className="h-3.5 w-3.5" />
+                <span>Simulate request in AI Buyer</span>
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {filteredEntries.map((entry) => {
+                const linkedOutcome = outcomeUpdatesByTxId.get(entry.id);
+                return (
+                  <div
+                    key={entry.id}
+                    onClick={() => onSelectVerdictEntry(entry, linkedOutcome)}
+                    className="group relative flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-border/80 bg-card p-4 hover:border-brand-blue/50 hover:bg-muted/30 transition cursor-pointer"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-semibold text-brand-navy group-hover:text-brand-blue transition">
+                          {entry.product}
+                        </span>
+                        <span
+                          className={cn(
+                            "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                            entry.decision === "approved"
+                              ? "bg-success/10 text-success"
+                              : entry.decision === "blocked"
+                              ? "bg-destructive/10 text-destructive"
+                              : entry.decision === "recovered"
+                              ? "bg-brand-blue/10 text-brand-blue"
+                              : entry.decision === "escalated"
+                              ? "bg-warning/10 text-warning"
+                              : "bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400"
+                          )}
+                        >
+                          {entry.decision.toUpperCase()}
+                        </span>
+                        {entry.savedAmount ? (
+                          <span className="rounded-full bg-brand-blue/15 px-2 py-0.5 text-[10px] font-bold text-brand-blue font-mono">
+                            Saved ₹{entry.savedAmount.toLocaleString("en-IN")}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <div className="mt-1 text-xs text-muted-foreground flex flex-wrap items-center gap-x-2">
+                        <span className="font-mono font-bold text-brand-navy">
+                          ₹{entry.amount?.toLocaleString("en-IN")}
+                        </span>
+                        <span>•</span>
+                        <span>{entry.reason}</span>
+                      </div>
+
+                      <div className="mt-2 flex flex-wrap items-center gap-2 font-mono text-[10px] text-muted-foreground">
+                        <span>{new Date(entry.time || entry.timestamp || "").toLocaleTimeString("en-IN")}</span>
+                        <span>·</span>
+                        <span className="inline-flex items-center gap-1.5">
+                          <span>agent: {entry.agent || "agt_live"}</span>
+                          <AgentTrustBadge agentId={entry.agent || "agt_live"} initialScore={entry.agentTrustScore} initialTier={entry.agentTrustTier} />
+                        </span>
+                        <span>·</span>
+                        <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px]">
+                          hash: {shortHash(entry.hash)}
+                        </span>
+                        {entry.orderId && (
+                          <span className="rounded bg-success/10 px-1.5 py-0.5 font-mono text-[10px] text-success">
+                            order: {entry.orderId}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0 text-xs font-semibold text-brand-blue group-hover:translate-x-0.5 transition">
+                      <span>Inspect block</span>
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between border-t border-border p-4 bg-muted/20 text-xs text-muted-foreground shrink-0">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-brand-blue" />
+            <span>Cryptographically sealed under SHA-256 block ledger</span>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-lg bg-muted px-3.5 py-1.5 text-xs font-semibold text-foreground hover:bg-muted/80 transition cursor-pointer"
+          >
+            Close
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1306,6 +1808,38 @@ function BuyerChat() {
     });
   }
 
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState("");
+
+  function handleStartRename(s: ChatSession, e: React.MouseEvent) {
+    e.stopPropagation();
+    setEditingSessionId(s.id);
+    setEditingTitle(s.title || "New chat");
+  }
+
+  async function handleSaveRename(id: string, e?: React.MouseEvent | React.FormEvent) {
+    if (e) e.stopPropagation();
+    const trimmed = editingTitle.trim() || "Untitled chat";
+    const target = sessions.find((s) => s.id === id);
+    if (!target) {
+      setEditingSessionId(null);
+      return;
+    }
+    const updated: ChatSession = {
+      ...target,
+      title: trimmed,
+      updatedAt: new Date().toISOString(),
+    };
+    setSessions((prev) => prev.map((s) => (s.id === id ? updated : s)));
+    setEditingSessionId(null);
+    await persistSession("demo_merchant", updated);
+  }
+
+  function handleCancelRename(e?: React.MouseEvent) {
+    if (e) e.stopPropagation();
+    setEditingSessionId(null);
+  }
+
   // Auto-resize input textarea
   useEffect(() => {
     if (inputRef.current) {
@@ -1591,11 +2125,12 @@ function BuyerChat() {
             ) : (
               sessions.map((s) => {
                 const isActive = s.id === activeSessionId;
+                const isEditing = s.id === editingSessionId;
                 const lastMsg = s.messages[s.messages.length - 1];
                 return (
                   <div
                     key={s.id}
-                    onClick={() => handleSelectSession(s.id)}
+                    onClick={() => !isEditing && handleSelectSession(s.id)}
                     className={cn(
                       "group relative flex cursor-pointer flex-col rounded-xl p-3 text-left transition",
                       isActive
@@ -1603,26 +2138,72 @@ function BuyerChat() {
                         : "hover:bg-muted/60 border border-transparent"
                     )}
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className={cn("truncate text-xs font-semibold", isActive ? "text-brand-navy" : "text-foreground")}>
-                        {s.title || "New chat"}
+                    {isEditing ? (
+                      <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          autoFocus
+                          type="text"
+                          value={editingTitle}
+                          onChange={(e) => setEditingTitle(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleSaveRename(s.id, e);
+                            if (e.key === "Escape") handleCancelRename(e);
+                          }}
+                          className="w-full rounded-md border border-brand-blue bg-background px-2 py-1 text-xs font-semibold text-brand-navy focus:outline-hidden focus:ring-1 focus:ring-brand-blue"
+                          placeholder="Chat title..."
+                        />
+                        <button
+                          type="button"
+                          onClick={(e) => handleSaveRename(s.id, e)}
+                          title="Save title"
+                          className="rounded-md p-1 text-success hover:bg-success/10 transition cursor-pointer shrink-0"
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleCancelRename}
+                          title="Cancel"
+                          className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition cursor-pointer shrink-0"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
                       </div>
-                      <span className="shrink-0 text-[10px] text-muted-foreground">
-                        {formatSessionTime(s.updatedAt || s.createdAt)}
-                      </span>
-                    </div>
-                    {lastMsg && (
-                      <p className="mt-1 line-clamp-1 text-[11px] text-muted-foreground">
-                        {lastMsg.content}
-                      </p>
+                    ) : (
+                      <>
+                        <div className="flex items-center justify-between gap-2 pr-14">
+                          <div className={cn("truncate text-xs font-semibold", isActive ? "text-brand-navy" : "text-foreground")}>
+                            {s.title || "New chat"}
+                          </div>
+                          <span className="shrink-0 text-[10px] text-muted-foreground">
+                            {formatSessionTime(s.updatedAt || s.createdAt)}
+                          </span>
+                        </div>
+                        {lastMsg && (
+                          <p className="mt-1 line-clamp-1 text-[11px] text-muted-foreground pr-14">
+                            {lastMsg.content}
+                          </p>
+                        )}
+                        <div className="absolute right-2 bottom-2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition">
+                          <button
+                            type="button"
+                            onClick={(e) => handleStartRename(s, e)}
+                            title="Rename chat"
+                            className="p-1 text-muted-foreground hover:text-brand-blue transition rounded-md hover:bg-background/80 cursor-pointer"
+                          >
+                            <Edit3 className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteSession(s.id, e)}
+                            title="Delete session"
+                            className="p-1 text-muted-foreground hover:text-destructive transition rounded-md hover:bg-background/80 cursor-pointer"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </>
                     )}
-                    <button
-                      onClick={(e) => handleDeleteSession(s.id, e)}
-                      title="Delete session"
-                      className="absolute right-2.5 bottom-2.5 opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-destructive transition rounded-md hover:bg-background/80 cursor-pointer"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
                   </div>
                 );
               })
@@ -2282,8 +2863,15 @@ function ApprovalsPanel() {
   );
 }
 
-function AuditPanel() {
+function AuditPanel({
+  initialFilter = "all",
+  onFilterChange,
+}: {
+  initialFilter?: string;
+  onFilterChange?: (filter: string) => void;
+} = {}) {
   const { auditLog } = useFirewall();
+  const [filter, setFilter] = useState<string>(initialFilter);
   const [verifying, setVerifying] = useState(false);
   const [verificationResult, setVerificationResult] = useState<{
     checked: boolean;
@@ -2295,6 +2883,17 @@ function AuditPanel() {
     entry: AuditEntry;
     linkedOutcome?: AuditEntry;
   } | null>(null);
+
+  useEffect(() => {
+    if (initialFilter) {
+      setFilter(initialFilter);
+    }
+  }, [initialFilter]);
+
+  const handleSetFilter = (newFilter: string) => {
+    setFilter(newFilter);
+    onFilterChange?.(newFilter);
+  };
 
   // Group outcome_updates with their original parent transactions
   const { outcomeUpdatesByTxId, primaryEntries } = useMemo(() => {
@@ -2317,6 +2916,18 @@ function AuditPanel() {
 
     return { outcomeUpdatesByTxId: map, primaryEntries: primaries };
   }, [auditLog]);
+
+  const filteredPrimaryEntries = useMemo(() => {
+    if (filter === "all") return primaryEntries;
+    return primaryEntries.filter((e) => {
+      if (filter === "approved") return e.decision === "approved";
+      if (filter === "blocked") return e.decision === "blocked";
+      if (filter === "escalated") return e.decision === "escalated";
+      if (filter === "recovered") return e.decision === "recovered";
+      if (filter === "enhanced") return e.decision === "enhanced";
+      return true;
+    });
+  }, [primaryEntries, filter]);
 
   const verifyChain = async () => {
     setVerifying(true);
@@ -2403,10 +3014,43 @@ function AuditPanel() {
           )}
         </div>
 
-        {primaryEntries.length ? (
+        {/* Filter Pills */}
+        <div className="flex items-center gap-1.5 border-b border-border bg-muted/20 px-6 py-2.5 overflow-x-auto">
+          {[
+            { id: "all", label: "All Decisions", count: primaryEntries.length },
+            { id: "approved", label: "Approved", count: primaryEntries.filter((e) => e.decision === "approved").length },
+            { id: "recovered", label: "Recovered", count: primaryEntries.filter((e) => e.decision === "recovered").length },
+            { id: "escalated", label: "Escalated", count: primaryEntries.filter((e) => e.decision === "escalated").length },
+            { id: "blocked", label: "Blocked", count: primaryEntries.filter((e) => e.decision === "blocked").length },
+            { id: "enhanced", label: "Enhanced", count: primaryEntries.filter((e) => e.decision === "enhanced").length },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => handleSetFilter(tab.id)}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer shrink-0",
+                filter === tab.id
+                  ? "bg-brand-blue text-white shadow-xs"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+            >
+              <span>{tab.label}</span>
+              <span
+                className={cn(
+                  "rounded-full px-1.5 py-0.5 font-mono text-[10px]",
+                  filter === tab.id ? "bg-white/20 text-white" : "bg-muted text-muted-foreground"
+                )}
+              >
+                {tab.count}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {filteredPrimaryEntries.length ? (
           <div className="divide-y divide-border">
             <AnimatePresence initial={false}>
-              {primaryEntries.map((entry) => {
+              {filteredPrimaryEntries.map((entry) => {
                 const linkedOutcome = outcomeUpdatesByTxId.get(entry.id);
                 return (
                   <VerdictChainRow
@@ -2421,7 +3065,14 @@ function AuditPanel() {
             </AnimatePresence>
           </div>
         ) : (
-          <EmptyState icon={Activity} text="Your verdict chain will appear here as agents make purchase requests." />
+          <EmptyState
+            icon={Activity}
+            text={
+              filter === "all"
+                ? "Your verdict chain will appear here as agents make purchase requests."
+                : `No ${filter} decisions recorded in the verdict chain yet.`
+            }
+          />
         )}
       </div>
 
@@ -2823,8 +3474,9 @@ function VerdictChainRow({
   );
 }
 
-// Retain AuditRow alias for backwards compatibility in Overview panel
-const AuditRow = VerdictChainRow;
+function AuditRow(props: any) {
+  return <VerdictChainRow {...props} />;
+}
 
 function CampaignsPanel() {
   const { rules } = useFirewall();
