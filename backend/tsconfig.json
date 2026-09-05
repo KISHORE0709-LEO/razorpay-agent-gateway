@@ -7,11 +7,10 @@
     "strict": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "outDir": "dist",
-    "baseUrl": ".",
+    "noEmit": true,
     "paths": {
       "@shared/*": ["../shared/*"]
     }
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*", "../shared/**/*"]
 }
