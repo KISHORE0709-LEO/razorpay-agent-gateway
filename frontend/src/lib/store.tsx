@@ -9,7 +9,7 @@ import {
 } from "react";
 import { ApprovalItem, AuditEntry, Decision, Product, Rules } from "./types";
 import { db } from "./firebase";
-import { doc, collection, onSnapshot, getDocs, deleteDoc } from "firebase/firestore";
+import { doc, collection, onSnapshot, getDocs, deleteDoc, setDoc, query } from "firebase/firestore";
 import { calculateTodayApprovedSpend } from "@shared/api";
 import { apiUrl } from "./api";
 
@@ -80,18 +80,19 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
   const [rules, setRules] = useState<Rules>(DEFAULT_RULES);
   const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
   const [approvals, setApprovals] = useState<any[]>([]);
-  const [latestDecision, setLatestDecision] = useState<Decision | null>(null);
-  const [latestTxnId, setLatestTxnId] = useState<string | null>(null);
+
+  const latestDecision = auditLog[0]?.decision || null;
+  const latestTxnId = auditLog[0]?.id || null;
 
   useEffect(() => {
     const q = query(collection(db, "merchants/demo_merchant/transactions"));
 
     const unsubTxns = onSnapshot(
       q,
-      (snap) => {
+      (snap: any) => {
         // Collect IDs of transactions that have received an outcome_update
         const resolvedTxnIds = new Set<string>();
-        snap.docs.forEach((d) => {
+        snap.docs.forEach((d: any) => {
           const data = d.data();
           if (data.type === "outcome_update" && data.relatedTransactionId) {
             resolvedTxnIds.add(data.relatedTransactionId);
@@ -100,31 +101,31 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
 
         // Pending approvals: escalated transactions that have not yet been resolved
         const pendingItems = snap.docs
-          .filter((d) => {
+          .filter((d: any) => {
             const data = d.data();
             return data.decision === "escalated" && !resolvedTxnIds.has(d.id);
           })
-          .map((d) => ({ id: d.id, ...d.data() } as any));
+          .map((d: any) => ({ id: d.id, ...d.data() } as any));
         pendingItems.sort(
-          (a, b) =>
+          (a: any, b: any) =>
             new Date(b.time || b.timestamp || 0).getTime() -
             new Date(a.time || a.timestamp || 0).getTime()
         );
         setApprovals(pendingItems);
 
         // Full Verdict Chain (all transactions and outcome updates in chronological order)
-        const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as AuditEntry));
-        items.sort((a, b) => {
+        const items = snap.docs.map((d: any) => ({ id: d.id, ...d.data() } as AuditEntry));
+        items.sort((a: any, b: any) => {
           const timeA = new Date(a.time || a.timestamp || 0).getTime();
           const timeB = new Date(b.time || b.timestamp || 0).getTime();
           if (timeB !== timeA) return timeB - timeA;
-          if ((b as any).prevHash === (a as any).hash) return -1;
-          if ((a as any).prevHash === (b as any).hash) return 1;
+          if (b.prevHash === a.hash) return -1;
+          if (a.prevHash === b.hash) return 1;
           return (b.id || "").localeCompare(a.id || "");
         });
         setAuditLog(items);
       },
-      (err) => {
+      (err: any) => {
         console.warn("Transactions snapshot warning:", err);
       }
     );

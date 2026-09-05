@@ -64,7 +64,7 @@ export async function generatePolicyStrategies(
       : ["Electronics", "Fashion", "Groceries", "Home & Kitchen"];
 
   prices.sort((a, b) => a - b);
-  const minPrice = prices.length ? prices[0] : 499;
+  const _minPrice = prices.length ? prices[0] : 499;
   const maxPrice = prices.length ? prices[prices.length - 1] : 4999;
   let medianPrice = 1499;
   if (prices.length > 0) {
