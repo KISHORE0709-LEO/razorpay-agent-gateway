@@ -63,7 +63,7 @@ export default function Landing() {
             </div>
             <div>
               <dt className="text-2xl font-bold text-white">100%</dt>
-              <dd className="text-xs text-white/50">Hash-chained audit</dd>
+              <dd className="text-xs text-white/50">Hash-chained verdict chain</dd>
             </div>
           </dl>
         </div>

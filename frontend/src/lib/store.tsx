@@ -62,7 +62,7 @@ export interface FirewallStore {
   dailySpent: number;
   resolveApproval: (id: string, approve: boolean) => Promise<SubmitResult | undefined>;
 
-  submitRequest: (product: Product) => Promise<SubmitResult>;
+  submitRequest: (product: Product, isRecoveryAcceptance?: boolean) => Promise<SubmitResult>;
   sendChatRequest: (message: string) => Promise<SubmitResult>;
 
   latestDecision: Decision | null;
@@ -83,32 +83,49 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const txnsRef = collection(db, "merchants/demo_merchant/transactions");
-    
-    // Live listener for approval queue (single where filter to avoid composite index error)
-    const qApprovals = query(
-      txnsRef,
-      where("status", "==", "pending")
-    );
-    const unsubApprovals = onSnapshot(qApprovals, (snap) => {
-      const items = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() } as any));
-      items.sort((a, b) => new Date(b.time || 0).getTime() - new Date(a.time || 0).getTime());
-      setApprovals(items);
-    }, (err) => {
-      console.warn("Approvals snapshot warning:", err);
-    });
 
-    // Live listener for audit trail without composite index requirements
-    const unsubAudit = onSnapshot(txnsRef, (snap) => {
-      const items = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() } as AuditEntry));
-      items.sort((a, b) => new Date(b.time || 0).getTime() - new Date(a.time || 0).getTime());
-      setAuditLog(items);
-    }, (err) => {
-      console.warn("Audit snapshot warning:", err);
-    });
+    const unsubTxns = onSnapshot(
+      txnsRef,
+      (snap) => {
+        // Collect IDs of transactions that have received an outcome_update
+        const resolvedTxnIds = new Set<string>();
+        snap.docs.forEach((d) => {
+          const data = d.data();
+          if (data.type === "outcome_update" && data.relatedTransactionId) {
+            resolvedTxnIds.add(data.relatedTransactionId);
+          }
+        });
+
+        // Pending approvals: escalated transactions that have not yet been resolved
+        const pendingItems = snap.docs
+          .filter((d) => {
+            const data = d.data();
+            return data.decision === "escalated" && !resolvedTxnIds.has(d.id);
+          })
+          .map((d) => ({ id: d.id, ...d.data() } as any));
+        pendingItems.sort(
+          (a, b) =>
+            new Date(b.time || b.timestamp || 0).getTime() -
+            new Date(a.time || a.timestamp || 0).getTime()
+        );
+        setApprovals(pendingItems);
+
+        // Full Verdict Chain (all transactions and outcome updates in chronological order)
+        const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as AuditEntry));
+        items.sort(
+          (a, b) =>
+            new Date(b.time || b.timestamp || 0).getTime() -
+            new Date(a.time || a.timestamp || 0).getTime()
+        );
+        setAuditLog(items);
+      },
+      (err) => {
+        console.warn("Transactions snapshot warning:", err);
+      }
+    );
 
     return () => {
-      unsubApprovals();
-      unsubAudit();
+      unsubTxns();
     };
   }, []);
 
@@ -159,7 +176,7 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const submitRequest = useCallback(
-    async (product: Product): Promise<SubmitResult> => {
+    async (product: Product, isRecoveryAcceptance?: boolean): Promise<SubmitResult> => {
       try {
         const response = await fetch("/api/evaluate", {
           method: "POST",
@@ -169,6 +186,7 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
             agentId: AGENT_ID,
             productId: product.id,
             requestedAmount: product.price,
+            isRecoveryAcceptance: !!isRecoveryAcceptance,
           }),
         });
         
@@ -200,6 +218,8 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
             prevHash: "",
             orderId,
             status: result.status,
+            agentTrustScore: result.agentTrustScore,
+            agentTrustTier: result.agentTrustTier,
           },
         };
 
@@ -211,6 +231,8 @@ export function FirewallProvider({ children }: { children: ReactNode }) {
             product,
             amount: product.price,
             reason: result.reason,
+            agentTrustScore: result.agentTrustScore,
+            agentTrustTier: result.agentTrustTier,
           };
           mappedResult.approval = approval;
         }

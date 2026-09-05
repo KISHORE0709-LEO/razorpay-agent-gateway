@@ -2,11 +2,52 @@ import { db } from "../firebase";
 import { collection, doc, getDoc, getDocFromServer, getDocs, limit, orderBy, query, setDoc, where, addDoc } from "firebase/firestore";
 import * as crypto from "crypto";
 import { createRazorpayOrder } from "./razorpay";
+import {
+  getAgentTrust,
+  getTrustTier,
+  computeEffectiveThreshold,
+  updateAgentTrustOnTransaction,
+} from "./agentTrust";
 
 export const GENESIS_HASH = "0000000000000000000000000000000000000000000000000000000000000000";
 
-export function computeTxnHash(prevHash: string, data: { time: string; agent: string; product: string; amount: number; decision: string; reason: string }): string {
-  const payload = `${prevHash}|${data.time}|${data.agent}|${data.product}|${data.amount}|${data.decision}|${data.reason}`;
+export function computeTxnHash(
+  prevHash: string,
+  data: {
+    time?: string;
+    timestamp?: string;
+    agent?: string;
+    agentId?: string;
+    product?: string;
+    productId?: string;
+    amount?: number;
+    requestedAmount?: number;
+    decision: string;
+    reason: string;
+  }
+): string {
+  const timeVal = data.timestamp || data.time || "";
+  const agentVal = data.agentId || data.agent || "";
+  const prodVal = data.productId || data.product || "";
+  const amountVal = Number(data.requestedAmount ?? data.amount ?? 0);
+  const decisionVal = data.decision || "";
+  const reasonVal = data.reason || "";
+  const payload = `${prevHash}|${timeVal}|${agentVal}|${prodVal}|${amountVal}|${decisionVal}|${reasonVal}`;
+  return crypto.createHash("sha256").update(payload).digest("hex");
+}
+
+export function computeOutcomeUpdateHash(
+  prevHash: string,
+  data: {
+    timestamp?: string;
+    time?: string;
+    relatedTransactionId: string;
+    outcome: string;
+    reason: string;
+  }
+): string {
+  const timeVal = data.timestamp || data.time || "";
+  const payload = `${prevHash}|${timeVal}|outcome_update|${data.relatedTransactionId}|${data.outcome}|${data.reason}`;
   return crypto.createHash("sha256").update(payload).digest("hex");
 }
 
@@ -15,15 +56,17 @@ export async function evaluatePurchaseRequest(
   agentId: string, 
   productId: string, 
   requestedAmount: number,
-  overrideDecision?: "approved" | "blocked"
+  overrideDecision?: "approved" | "blocked",
+  isRecoveryAcceptance?: boolean
 ) {
-  // 1. Fetch rules and product FRESH from Firestore server (no in-memory cache)
+  // 1. Fetch rules, product, and agent trust profile FRESH from Firestore server
   const rulesRef = doc(db, `merchants/${merchantId}/rules/current`);
   const productRef = doc(db, `merchants/${merchantId}/catalog/${productId}`);
   
-  const [rulesSnap, productSnap] = await Promise.all([
+  const [rulesSnap, productSnap, agentTrust] = await Promise.all([
     getDocFromServer(rulesRef),
-    getDocFromServer(productRef)
+    getDocFromServer(productRef),
+    getAgentTrust(merchantId, agentId)
   ]);
 
   if (!rulesSnap.exists()) {
@@ -35,6 +78,14 @@ export async function evaluatePurchaseRequest(
 
   const rules = rulesSnap.data();
   const product = productSnap.data();
+
+  // Compute trust tier and adaptive effective threshold
+  const trustTier = getTrustTier(agentTrust.score);
+  const { effectiveThreshold, isRelaxed, isStrict } = computeEffectiveThreshold(
+    agentTrust.score,
+    Number(rules.approvalThreshold || 0),
+    Number(rules.maxOrderAmount || 0)
+  );
 
   let decision: "approved" | "recovered" | "escalated" | "blocked";
   let reason: string;
@@ -56,7 +107,7 @@ export async function evaluatePurchaseRequest(
     decision = overrideDecision;
     reason = overrideDecision === "approved" ? "Approved by merchant" : "Manually denied by merchant";
   } else {
-    // 2. Check category allow-list (FIRST)
+    // 2. Check category allow-list (HARD LIMIT - NEVER overridden by trust score)
     const allowed = Array.isArray(rules.allowedCategories)
       ? rules.allowedCategories.map((c: any) => String(c || "").trim().toLowerCase())
       : [];
@@ -64,9 +115,9 @@ export async function evaluatePurchaseRequest(
 
     if (!allowed.includes(productCat)) {
       decision = "blocked";
-      reason = `Category '${product.category}' not in merchant's allow-list`;
+      reason = `Blocked — Category '${product.category}' not in merchant's allow-list (agent trust ${agentTrust.score}, ${trustTier})`;
     } 
-    // 3. Check per-order cap (SECOND)
+    // 3. Check per-order cap (HARD LIMIT - NEVER overridden by trust score)
     else if (requestedAmount > rules.maxOrderAmount) {
       // Query catalog for real same-category items under the cap
       const catalogRef = collection(db, `merchants/${merchantId}/catalog`);
@@ -91,28 +142,36 @@ export async function evaluatePurchaseRequest(
 
       if (!bestMatch) {
         decision = "blocked";
-        reason = `Exceeds per-order limit of ₹${rules.maxOrderAmount}, no in-budget alternative found`;
+        reason = `Blocked — Exceeds per-order limit of ₹${rules.maxOrderAmount}, no in-budget alternative found (agent trust ${agentTrust.score}, ${trustTier})`;
       } else {
         decision = "recovered";
-        reason = `Requested amount ₹${requestedAmount} exceeds per-order cap of ₹${rules.maxOrderAmount}. Suggested alternative: ${bestMatch.name} (₹${bestMatch.price})`;
+        reason = `Recovery offer — Requested amount ₹${requestedAmount} exceeds per-order cap of ₹${rules.maxOrderAmount} (agent trust ${agentTrust.score}, ${trustTier}). Suggested alternative: ${bestMatch.name} (₹${bestMatch.price})`;
         recoveryProduct = bestMatch;
       }
     } 
     else {
-      // 4. Check daily spend limit (THIRD)
+      // 4. Check daily spend limit (HARD LIMIT - NEVER overridden by trust score)
       if (todaySpent + requestedAmount > rules.dailySpendLimit) {
         decision = "blocked";
-        reason = `Would exceed daily spend limit of ₹${rules.dailySpendLimit} (today: ₹${todaySpent}, requested: ₹${requestedAmount})`;
+        reason = `Blocked — Would exceed daily spend limit of ₹${rules.dailySpendLimit} (today: ₹${todaySpent}, requested: ₹${requestedAmount}) (agent trust ${agentTrust.score}, ${trustTier})`;
       } 
-      // 5. Check approval threshold (FOURTH)
-      else if (requestedAmount > rules.approvalThreshold) {
+      // 5. Check approval threshold (ADAPTIVE - modulated by agent trust score)
+      else if (requestedAmount > effectiveThreshold) {
         decision = "escalated";
-        reason = `Above ₹${rules.approvalThreshold} approval threshold, awaiting merchant review`;
+        if (isStrict) {
+          reason = `Escalated — agent trust ${agentTrust.score} (${trustTier}), all purchases require approval`;
+        } else {
+          reason = `Escalated — agent trust ${agentTrust.score} (${trustTier}), above ₹${effectiveThreshold} approval threshold, awaiting merchant review`;
+        }
       } 
-      // 6. Approve (ELSE)
+      // 6. Approve (Within all limits and approval threshold)
       else {
         decision = "approved";
-        reason = "Within all policy limits";
+        if (isRelaxed && requestedAmount > rules.approvalThreshold) {
+          reason = `Approved — agent trust ${agentTrust.score} (${trustTier}), relaxed threshold applied (₹${effectiveThreshold})`;
+        } else {
+          reason = `Approved — agent trust ${agentTrust.score} (${trustTier}), within policy limits`;
+        }
       }
     }
   }
@@ -127,13 +186,21 @@ export async function evaluatePurchaseRequest(
     prevHash = lastTxnSnap.docs[0].data().hash || GENESIS_HASH;
   }
 
+  const timestamp = new Date().toISOString();
   const txnData: any = {
-    time: new Date().toISOString(),
+    time: timestamp,
+    timestamp,
     agent: agentId,
+    agentId,
     product: product.name,
+    productId,
     amount: requestedAmount,
+    requestedAmount,
     decision,
     reason,
+    agentTrustScore: agentTrust.score,
+    agentTrustTier: trustTier,
+    effectiveThreshold,
   };
   
   if (decision === "recovered" && recoveryProduct) {
@@ -180,6 +247,19 @@ export async function evaluatePurchaseRequest(
     }, { merge: true });
   }
 
+  // 9. Update Agent Trust Score based on transaction outcome
+  let updatedTrust = agentTrust;
+  try {
+    if (decision === "approved") {
+      const eventType = isRecoveryAcceptance ? "accepted_recovery" : "approved";
+      updatedTrust = await updateAgentTrustOnTransaction(merchantId, agentId, eventType);
+    } else if (decision === "blocked") {
+      updatedTrust = await updateAgentTrustOnTransaction(merchantId, agentId, "blocked");
+    }
+  } catch (err) {
+    console.error(`Failed to update agent trust score for ${agentId}:`, err);
+  }
+
   return {
     decision,
     reason,
@@ -191,6 +271,9 @@ export async function evaluatePurchaseRequest(
     transactionId: docRef.id,
     time: txnData.time,
     hash,
-    prevHash
+    prevHash,
+    agentTrustScore: updatedTrust.score,
+    agentTrustTier: getTrustTier(updatedTrust.score),
+    effectiveThreshold,
   };
 }

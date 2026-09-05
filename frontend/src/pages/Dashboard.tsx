@@ -40,7 +40,8 @@ import { cn } from "@/lib/utils";
 import { CATEGORIES } from "@/lib/catalog";
 import { AGENT_ID, useFirewall, SubmitResult } from "@/lib/store";
 import { Decision, Product, Rules } from "@/lib/types";
-import { GENESIS_HASH, computeTxnHash } from "@/lib/hash";
+import { GENESIS_HASH, computeTxnHash, computeEntryHash, shortHash } from "@/lib/hash";
+import { AgentTrustBadge } from "@/components/AgentTrustBadge";
 import {
   ChatMessage,
   ChatSession,
@@ -56,7 +57,7 @@ const NAV = [
   { id: "catalog", label: "Catalog", icon: Package },
   { id: "chat", label: "AI Buyer", icon: Bot },
   { id: "approvals", label: "Approval Queue", icon: Clock3 },
-  { id: "audit", label: "Audit Trail", icon: Activity },
+  { id: "audit", label: "Verdict Chain", icon: Activity },
 ] as const;
 type Tab = (typeof NAV)[number]["id"];
 
@@ -103,7 +104,7 @@ export default function Dashboard() {
       </aside>
       <div className={cn("min-w-0 flex-1 transition-[padding] duration-300 ease-out flex flex-col h-full overflow-hidden", sidebarOpen ? "pl-72" : "pl-0")}>
         <header className="flex h-16 sm:h-20 shrink-0 items-center justify-between border-b border-border bg-card px-5 sm:px-8">
-          <div className="flex items-center gap-3"><div className="flex items-center gap-1"><button onClick={() => setSidebarOpen((open) => !open)} className="rounded-lg p-2 text-muted-foreground transition hover:bg-muted hover:text-brand-navy" title={sidebarOpen ? "Close sidebar" : "Open sidebar"}><Menu className="h-4 w-4" /></button></div><div><h1 className="text-lg font-semibold capitalize">{tab === "chat" ? "AI Buyer" : tab === "rules" ? "Firewall Rules" : tab === "catalog" ? "Product Catalog" : tab === "audit" ? "Audit Trail" : tab === "approvals" ? "Approval Queue" : "Overview"}</h1></div></div>
+          <div className="flex items-center gap-3"><div className="flex items-center gap-1"><button onClick={() => setSidebarOpen((open) => !open)} className="rounded-lg p-2 text-muted-foreground transition hover:bg-muted hover:text-brand-navy" title={sidebarOpen ? "Close sidebar" : "Open sidebar"}><Menu className="h-4 w-4" /></button></div><div><h1 className="text-lg font-semibold capitalize">{tab === "chat" ? "AI Buyer" : tab === "rules" ? "Firewall Rules" : tab === "catalog" ? "Product Catalog" : tab === "audit" ? "Verdict Chain" : tab === "approvals" ? "Approval Queue" : "Overview"}</h1></div></div>
           <div className="flex items-center gap-3"><div className="hidden items-center gap-2 rounded-full border border-success/20 bg-success/10 px-3 py-1.5 text-xs font-medium text-success sm:flex"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-success" />System operational</div><div className="h-8 w-8 rounded-full bg-brand-blue/10 text-center text-xs leading-8 font-semibold text-brand-navy">{merchantEmail?.[0]?.toUpperCase() ?? "M"}</div></div>
         </header>
         <main className={cn("mx-auto w-full max-w-[1500px] flex-1 min-h-0", tab === "chat" ? "p-3 sm:p-4 lg:p-5 flex flex-col overflow-hidden" : "p-5 sm:p-8 overflow-y-auto")}>
@@ -222,7 +223,7 @@ function Overview({ onTab }: { onTab: (tab: Tab) => void }) {
       <div className="flex items-center justify-between border-b border-border px-6 py-4">
         <div>
           <h3 className="font-semibold text-brand-navy">Recent decisions</h3>
-          <p className="mt-1 text-xs text-muted-foreground">Live audit stream</p>
+          <p className="mt-1 text-xs text-muted-foreground">Live verdict stream</p>
         </div>
         <button onClick={() => onTab("audit")} className="text-xs font-semibold text-brand-blue">
           View all <ChevronRight className="inline h-3 w-3" />
@@ -1405,7 +1406,7 @@ function BuyerChat() {
     if (!result.alternative || !activeSession) return;
     setLoading(true);
     try {
-      const next = await submitRequest(result.alternative);
+      const next = await submitRequest(result.alternative, true);
       const now = new Date().toISOString();
       const userAcceptMsg: ChatMessage = {
         id: `msg_${Date.now()}_user`,
@@ -1590,9 +1591,12 @@ function BuyerChat() {
                 <Plus className="h-3.5 w-3.5" />
                 <span>New chat</span>
               </button>
-              <span className="rounded-md bg-muted px-2 py-1 font-mono text-[10px] text-muted-foreground">
-                {AGENT_ID}
-              </span>
+              <div className="flex items-center gap-1.5">
+                <span className="rounded-md bg-muted px-2 py-1 font-mono text-[10px] text-muted-foreground">
+                  {AGENT_ID}
+                </span>
+                <AgentTrustBadge agentId={AGENT_ID} />
+              </div>
             </div>
           </div>
 
@@ -2135,8 +2139,19 @@ function ApprovalsPanel() {
                     AI Agent wants to spend <span className="font-mono font-semibold text-brand-navy">₹{item.amount?.toLocaleString("en-IN")}</span>
                   </p>
                   <p className="mt-2 text-xs text-muted-foreground">{item.reason}</p>
-                  <div className="mt-2 font-mono text-[10px] text-muted-foreground">
-                    ID: {item.id} · {new Date(item.time).toLocaleTimeString("en-IN")}
+                  <div className="mt-2 flex flex-wrap items-center gap-2 font-mono text-[10px] text-muted-foreground">
+                    <span>ID: {item.id}</span>
+                    <span>·</span>
+                    <span>{new Date(item.time).toLocaleTimeString("en-IN")}</span>
+                    <span>·</span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span>agent: {item.agent || AGENT_ID}</span>
+                      <AgentTrustBadge
+                        agentId={item.agent || AGENT_ID}
+                        initialScore={item.agentTrustScore}
+                        initialTier={item.agentTrustTier}
+                      />
+                    </span>
                   </div>
                 </div>
                 <div className="flex shrink-0 gap-2">
@@ -2173,15 +2188,41 @@ function AuditPanel() {
     count: number;
     errorMsg?: string;
   }>({ checked: false, valid: false, count: 0 });
+  const [selectedEntry, setSelectedEntry] = useState<{
+    entry: AuditEntry;
+    linkedOutcome?: AuditEntry;
+  } | null>(null);
+
+  // Group outcome_updates with their original parent transactions
+  const { outcomeUpdatesByTxId, primaryEntries } = useMemo(() => {
+    const map = new Map<string, AuditEntry>();
+    const primaries: AuditEntry[] = [];
+
+    // Collect outcome updates by parent ID
+    auditLog.forEach((entry) => {
+      if (entry.type === "outcome_update" && entry.relatedTransactionId) {
+        map.set(entry.relatedTransactionId, entry);
+      }
+    });
+
+    // Collect primary transactions (non-outcome_updates)
+    auditLog.forEach((entry) => {
+      if (entry.type !== "outcome_update") {
+        primaries.push(entry);
+      }
+    });
+
+    return { outcomeUpdatesByTxId: map, primaryEntries: primaries };
+  }, [auditLog]);
 
   const verifyChain = async () => {
     setVerifying(true);
     setVerificationResult({ checked: false, valid: false, count: 0 });
-    
-    // Simulate verification delay for user feedback
+
+    // Verification delay for visual confirmation
     await new Promise((r) => setTimeout(r, 600));
 
-    // Chain is ordered newest-first, reverse to verify chronologically from genesis
+    // Chain is ordered newest-first, reverse to verify chronologically from genesis block
     const chain = [...auditLog].reverse();
     let currentPrev = GENESIS_HASH;
     let valid = true;
@@ -2189,27 +2230,20 @@ function AuditPanel() {
 
     for (let i = 0; i < chain.length; i++) {
       const entry = chain[i];
-      
+
       // 1. Verify prevHash links to previous block
       if (entry.prevHash && entry.prevHash !== currentPrev) {
         valid = false;
-        errorMsg = `Chain linkage broken at block #${i + 1} (${entry.product || entry.id}). Expected prevHash: ${currentPrev.slice(0, 10)}... Found: ${entry.prevHash.slice(0, 10)}...`;
+        errorMsg = `Chain linkage broken at block #${i + 1} (${entry.product || entry.relatedTransactionId || entry.id}). Expected prevHash: ${currentPrev.slice(0, 10)}... Found: ${entry.prevHash.slice(0, 10)}...`;
         break;
       }
 
-      // 2. Recompute SHA-256 hash using canonical format
-      const computed = await computeTxnHash(entry.prevHash || GENESIS_HASH, {
-        time: entry.time,
-        agent: entry.agent,
-        product: entry.product,
-        amount: entry.amount,
-        decision: entry.decision,
-        reason: entry.reason,
-      });
+      // 2. Recompute SHA-256 hash using immutable creation fields across ALL entries (including outcome_update)
+      const computed = await computeEntryHash(entry.prevHash || GENESIS_HASH, entry);
 
       if (entry.hash && computed !== entry.hash) {
         valid = false;
-        errorMsg = `Hash mismatch at block #${i + 1} (${entry.product || entry.id}). Cryptographic integrity corrupted!`;
+        errorMsg = `Hash mismatch at block #${i + 1} (${entry.product || entry.relatedTransactionId || entry.id}). Cryptographic integrity corrupted!`;
         break;
       }
 
@@ -2227,15 +2261,20 @@ function AuditPanel() {
 
   return (
     <div className="space-y-7">
-      <div>
-        <p className="text-sm text-muted-foreground">Immutable event history</p>
-        <h2 className="mt-1 text-2xl font-bold tracking-tight text-brand-navy">Audit trail</h2>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <p className="text-sm text-muted-foreground">Cryptographic transaction ledger</p>
+          <h2 className="mt-1 text-2xl font-bold tracking-tight text-brand-navy">Verdict Chain</h2>
+        </div>
       </div>
-      <div className="rounded-2xl border border-brand-blue/20 bg-card overflow-hidden">
+
+      <div className="rounded-2xl border border-brand-blue/20 bg-card overflow-hidden shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-6 py-4">
           <div>
             <h3 className="font-semibold text-brand-navy">Hash-chained decisions</h3>
-            <p className="mt-1 text-xs text-muted-foreground">Every event is cryptographically linked to the previous SHA-256 block</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Every event is cryptographically linked to the previous SHA-256 block using immutable creation fields
+            </p>
           </div>
           {verificationResult.checked ? (
             verificationResult.valid ? (
@@ -2253,82 +2292,421 @@ function AuditPanel() {
             <button
               onClick={verifyChain}
               disabled={verifying || auditLog.length === 0}
-              className="flex items-center gap-1.5 rounded-full bg-brand-blue/10 px-3.5 py-1.5 text-xs font-semibold text-brand-blue hover:bg-brand-blue/20 disabled:opacity-50 transition"
+              className="flex items-center gap-1.5 rounded-full bg-brand-blue/10 px-3.5 py-1.5 text-xs font-semibold text-brand-blue hover:bg-brand-blue/20 disabled:opacity-50 transition cursor-pointer"
             >
               {verifying ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
               {verifying ? "Verifying SHA-256 Chain..." : "Verify chain"}
             </button>
           )}
         </div>
-        {auditLog.length ? (
+
+        {primaryEntries.length ? (
           <div className="divide-y divide-border">
             <AnimatePresence initial={false}>
-              {auditLog.map((entry) => (
-                <AuditRow key={entry.id} entry={entry} detailed />
-              ))}
+              {primaryEntries.map((entry) => {
+                const linkedOutcome = outcomeUpdatesByTxId.get(entry.id);
+                return (
+                  <VerdictChainRow
+                    key={entry.id}
+                    entry={entry}
+                    linkedOutcome={linkedOutcome}
+                    onSelect={() => setSelectedEntry({ entry, linkedOutcome })}
+                    detailed
+                  />
+                );
+              })}
             </AnimatePresence>
           </div>
         ) : (
-          <EmptyState icon={Activity} text="Your audit trail will appear here as agents make purchase requests." />
+          <EmptyState icon={Activity} text="Your verdict chain will appear here as agents make purchase requests." />
         )}
+      </div>
+
+      {/* Click-to-Expand Detail Modal */}
+      {selectedEntry && (
+        <VerdictDetailModal
+          entry={selectedEntry.entry}
+          linkedOutcome={selectedEntry.linkedOutcome}
+          onClose={() => setSelectedEntry(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function VerdictDetailModal({
+  entry,
+  linkedOutcome,
+  onClose,
+}: {
+  entry: AuditEntry;
+  linkedOutcome?: AuditEntry;
+  onClose: () => void;
+}) {
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const copyToClipboard = (text: string, key: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 2000);
+  };
+
+  const config = {
+    approved: ["Approved", "text-success", "bg-success/10", "border-success", CheckCircle2],
+    blocked: ["Blocked", "text-destructive", "bg-destructive/10", "border-destructive", Ban],
+    escalated: ["Escalated", "text-warning", "bg-warning/10", "border-warning", Clock3],
+    recovered: ["Recovered", "text-brand-blue", "bg-brand-blue/10", "border-brand-blue", RefreshCw],
+  };
+  const [label, textCol, bgCol, , Icon] = (config as Record<string, any>)[entry.decision] || [
+    "Unknown",
+    "text-muted-foreground",
+    "bg-muted",
+    "border-muted",
+    Activity,
+  ];
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-2xl rounded-2xl border border-border bg-card p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Modal Header */}
+        <div className="flex items-start justify-between border-b border-border pb-4">
+          <div className="flex items-center gap-3">
+            <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl", bgCol, textCol)}>
+              <Icon className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-bold text-brand-navy">{entry.product || "Transaction"}</h3>
+                <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-semibold", bgCol, textCol)}>
+                  {label}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground font-mono">Block ID: {entry.id}</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-brand-navy transition cursor-pointer"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Primary Details Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+          <div className="rounded-xl border border-border bg-muted/20 p-3.5 space-y-1">
+            <span className="text-[11px] font-medium text-muted-foreground">Agent ID</span>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-xs font-semibold text-brand-navy">{entry.agent || "agt_live_7f3c9e"}</span>
+              <AgentTrustBadge
+                agentId={entry.agent || "agt_live_7f3c9e"}
+                initialScore={entry.agentTrustScore}
+                initialTier={entry.agentTrustTier}
+              />
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-border bg-muted/20 p-3.5 space-y-1">
+            <span className="text-[11px] font-medium text-muted-foreground">Requested Amount</span>
+            <div className="text-base font-mono font-bold text-brand-navy">
+              ₹{entry.amount?.toLocaleString("en-IN")}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-border bg-muted/20 p-3.5 space-y-1">
+            <span className="text-[11px] font-medium text-muted-foreground">Timestamp</span>
+            <div className="text-xs font-medium text-brand-navy">
+              {new Date(entry.time || entry.timestamp || "").toLocaleString("en-IN")}
+            </div>
+            <div className="text-[10px] font-mono text-muted-foreground">{entry.time || entry.timestamp}</div>
+          </div>
+
+          <div className="rounded-xl border border-border bg-muted/20 p-3.5 space-y-1">
+            <span className="text-[11px] font-medium text-muted-foreground">Creation Decision</span>
+            <div className="text-xs font-semibold text-brand-navy capitalize flex items-center gap-2">
+              <span>{entry.decision}</span>
+              {entry.orderId && (
+                <span className="rounded bg-success/10 px-1.5 py-0.5 font-mono text-[10px] text-success">
+                  Order: {entry.orderId}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Full Reason Text */}
+        <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-1.5">
+          <span className="text-xs font-semibold text-brand-navy">Full Reason Text</span>
+          <p className="text-xs text-muted-foreground leading-relaxed">{entry.reason}</p>
+        </div>
+
+        {/* Cryptographic Proof Hashes */}
+        <div className="space-y-3 rounded-xl border border-brand-blue/20 bg-brand-blue/[0.03] p-4">
+          <h4 className="text-xs font-bold text-brand-navy flex items-center gap-1.5">
+            <ShieldCheck className="h-4 w-4 text-brand-blue" />
+            Cryptographic SHA-256 Hashes
+          </h4>
+
+          <div className="space-y-2.5 text-xs">
+            <div>
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1">
+                <span className="font-medium">Entry Hash (Block SHA-256)</span>
+                <button
+                  onClick={() => copyToClipboard(entry.hash, "hash")}
+                  className="inline-flex items-center gap-1 text-brand-blue hover:underline cursor-pointer"
+                >
+                  {copiedKey === "hash" ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                  <span>{copiedKey === "hash" ? "Copied" : "Copy"}</span>
+                </button>
+              </div>
+              <div className="rounded-lg bg-card border border-border p-2 font-mono text-[11px] text-brand-navy break-all select-all">
+                {entry.hash || "pending"}
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1">
+                <span className="font-medium">Previous Block Hash (prevHash)</span>
+                <button
+                  onClick={() => copyToClipboard(entry.prevHash || GENESIS_HASH, "prevHash")}
+                  className="inline-flex items-center gap-1 text-brand-blue hover:underline cursor-pointer"
+                >
+                  {copiedKey === "prevHash" ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                  <span>{copiedKey === "prevHash" ? "Copied" : "Copy"}</span>
+                </button>
+              </div>
+              <div className="rounded-lg bg-card border border-border p-2 font-mono text-[11px] text-muted-foreground break-all select-all">
+                {entry.prevHash || GENESIS_HASH}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Linked Merchant Outcome Update (if exists) */}
+        {linkedOutcome && (
+          <div className="space-y-3 rounded-xl border border-border bg-muted/40 p-4">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold text-brand-navy flex items-center gap-2">
+                <span
+                  className={cn(
+                    "inline-flex h-2 w-2 rounded-full",
+                    linkedOutcome.outcome === "approved" ? "bg-success" : "bg-destructive"
+                  )}
+                />
+                Linked Merchant Resolution
+              </h4>
+              <span
+                className={cn(
+                  "rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+                  linkedOutcome.outcome === "approved"
+                    ? "bg-success/15 text-success"
+                    : "bg-destructive/15 text-destructive"
+                )}
+              >
+                {linkedOutcome.outcome}
+              </span>
+            </div>
+
+            <p className="text-xs text-muted-foreground leading-relaxed">{linkedOutcome.reason}</p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+              <div className="rounded-lg bg-card border border-border p-2.5">
+                <span className="text-[10px] text-muted-foreground block">Resolved Timestamp</span>
+                <span className="font-mono text-[11px] text-brand-navy">
+                  {new Date(linkedOutcome.time || linkedOutcome.timestamp || "").toLocaleString("en-IN")}
+                </span>
+              </div>
+              {linkedOutcome.orderId && (
+                <div className="rounded-lg bg-card border border-border p-2.5">
+                  <span className="text-[10px] text-muted-foreground block">Razorpay Order ID</span>
+                  <span className="font-mono text-[11px] text-success">{linkedOutcome.orderId}</span>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1">
+                <span className="font-medium">Outcome Block Hash</span>
+                <button
+                  onClick={() => copyToClipboard(linkedOutcome.hash, "outcomeHash")}
+                  className="inline-flex items-center gap-1 text-brand-blue hover:underline cursor-pointer"
+                >
+                  {copiedKey === "outcomeHash" ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                  <span>{copiedKey === "outcomeHash" ? "Copied" : "Copy"}</span>
+                </button>
+              </div>
+              <div className="rounded-lg bg-card border border-border p-2 font-mono text-[11px] text-brand-navy break-all select-all">
+                {linkedOutcome.hash}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal Footer */}
+        <div className="flex justify-end pt-2">
+          <button
+            onClick={onClose}
+            className="rounded-lg bg-brand-blue px-4 py-2 text-xs font-semibold text-white hover:brightness-105 transition cursor-pointer"
+          >
+            Close
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
-function AuditRow({ entry, detailed = false }: { entry: any; detailed?: boolean }) {
+function VerdictChainRow({
+  entry,
+  linkedOutcome,
+  onSelect,
+  detailed = false,
+}: {
+  entry: any;
+  linkedOutcome?: any;
+  onSelect?: () => void;
+  detailed?: boolean;
+}) {
   const config = {
     approved: ["Approved", "text-success", "bg-success/10", CheckCircle2, "border-success"],
     blocked: ["Blocked", "text-destructive", "bg-destructive/10", Ban, "border-destructive"],
     escalated: ["Escalated", "text-warning", "bg-warning/10", Clock3, "border-warning"],
     recovered: ["Recovered", "text-brand-blue", "bg-brand-blue/10", RefreshCw, "border-brand-blue"],
   };
-  const itemConfig = (config as Record<string, any>)[entry.decision] || ["Unknown", "text-muted-foreground", "bg-muted", Activity, "border-muted"];
-  
+  const itemConfig =
+    (config as Record<string, any>)[entry.decision] || [
+      "Unknown",
+      "text-muted-foreground",
+      "bg-muted",
+      Activity,
+      "border-muted",
+    ];
+
   const Icon = itemConfig[3];
-  
+
   return (
     <motion.div
       initial={{ opacity: 0, y: -10 }}
       animate={{ opacity: 1, y: 0 }}
-      className={cn("flex items-start gap-3 px-6 py-4 border-l-4", itemConfig[4])}
+      onClick={onSelect}
+      className={cn(
+        "flex flex-col px-6 py-4 border-l-4 transition cursor-pointer hover:bg-muted/30 group",
+        itemConfig[4]
+      )}
     >
-      <div className={cn("mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", itemConfig[2])}>
-        <Icon className={cn("h-4 w-4", itemConfig[1])} />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="text-sm font-semibold text-brand-navy">{entry.product}</span>
-          <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", itemConfig[2], itemConfig[1])}>
-            {itemConfig[0]}
-          </span>
-          <span className="ml-auto font-mono text-[10px] text-muted-foreground">
-            {new Date(entry.time).toLocaleTimeString("en-IN")}
-          </span>
+      <div className="flex items-start gap-3">
+        <div className={cn("mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", itemConfig[2])}>
+          <Icon className={cn("h-4 w-4", itemConfig[1])} />
         </div>
-        <div className="mt-1 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
-          <span className="font-mono font-medium text-brand-navy">₹{entry.amount?.toLocaleString("en-IN")}</span>
-          <span>{entry.reason}</span>
-        </div>
-        {detailed && (
-          <div className="mt-2 flex flex-wrap items-center gap-2 font-mono text-[10px] text-muted-foreground">
-            <span className="rounded bg-muted px-2 py-1">hash: {entry.hash ? `${entry.hash.slice(0, 16)}...` : "pending"}</span>
-            <span className="rounded bg-muted px-2 py-1">prev: {entry.prevHash ? `${entry.prevHash.slice(0, 16)}...` : "none"}</span>
-            <span className="rounded bg-muted px-2 py-1">agent: {entry.agent}</span>
-            {entry.orderId && <span className="rounded bg-success/10 text-success px-2 py-1">order: {entry.orderId}</span>}
+
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="text-sm font-semibold text-brand-navy group-hover:text-brand-blue transition">
+              {entry.product}
+            </span>
+            <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", itemConfig[2], itemConfig[1])}>
+              {itemConfig[0]}
+            </span>
+            <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+              {new Date(entry.time || entry.timestamp || "").toLocaleTimeString("en-IN")}
+            </span>
           </div>
-        )}
+
+          <div className="mt-1 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+            <span className="font-mono font-medium text-brand-navy">₹{entry.amount?.toLocaleString("en-IN")}</span>
+            <span>{entry.reason}</span>
+          </div>
+
+          {detailed && (
+            <div className="mt-2 flex flex-wrap items-center gap-2 font-mono text-[10px] text-muted-foreground">
+              <span className="rounded bg-muted px-2 py-1">
+                hash: {entry.hash ? `${entry.hash.slice(0, 14)}...` : "pending"}
+              </span>
+              <span className="rounded bg-muted px-2 py-1">
+                prev: {entry.prevHash ? `${entry.prevHash.slice(0, 14)}...` : "none"}
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded bg-muted px-2 py-1">
+                <span>agent: {entry.agent || "agt_live_7f3c9e"}</span>
+                <AgentTrustBadge
+                  agentId={entry.agent || "agt_live_7f3c9e"}
+                  initialScore={entry.agentTrustScore}
+                  initialTier={entry.agentTrustTier}
+                />
+              </span>
+              {entry.orderId && (
+                <span className="rounded bg-success/10 text-success px-2 py-1">order: {entry.orderId}</span>
+              )}
+            </div>
+          )}
+
+          {/* Linked Merchant Resolution Line (Visual Grouping) */}
+          {linkedOutcome && (
+            <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-border/80 bg-muted/40 px-3 py-2 text-xs">
+              <div
+                className={cn(
+                  "flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px]",
+                  linkedOutcome.outcome === "approved"
+                    ? "bg-success/20 text-success"
+                    : "bg-destructive/20 text-destructive"
+                )}
+              >
+                {linkedOutcome.outcome === "approved" ? (
+                  <Check className="h-2.5 w-2.5" />
+                ) : (
+                  <X className="h-2.5 w-2.5" />
+                )}
+              </div>
+              <span className="font-semibold text-brand-navy">
+                → {linkedOutcome.outcome === "approved" ? "Approved" : "Denied"} by merchant
+              </span>
+              <span className="text-muted-foreground">
+                at {new Date(linkedOutcome.time || linkedOutcome.timestamp || "").toLocaleTimeString("en-IN")}
+              </span>
+              {linkedOutcome.orderId && (
+                <span className="rounded bg-success/10 px-1.5 py-0.5 font-mono text-[10px] text-success">
+                  order: {linkedOutcome.orderId}
+                </span>
+              )}
+              <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+                hash: {shortHash(linkedOutcome.hash)}
+              </span>
+            </div>
+          )}
+        </div>
       </div>
     </motion.div>
   );
 }
 
-function EmptyState({ icon: Icon, text, action, actionLabel }: { icon: typeof Activity; text: string; action?: () => void; actionLabel?: string }) { 
+// Retain AuditRow alias for backwards compatibility in Overview panel
+const AuditRow = VerdictChainRow;
+
+function EmptyState({
+  icon: Icon,
+  text,
+  action,
+  actionLabel,
+}: {
+  icon: typeof Activity;
+  text: string;
+  action?: () => void;
+  actionLabel?: string;
+}) {
   return (
     <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
       <Icon className="h-8 w-8 text-muted-foreground/40" />
       <p className="mt-3 max-w-sm text-sm text-muted-foreground">{text}</p>
-      {action && <button onClick={action} className="mt-4 text-xs font-semibold text-brand-blue hover:underline">{actionLabel}</button>}
+      {action && (
+        <button onClick={action} className="mt-4 text-xs font-semibold text-brand-blue hover:underline">
+          {actionLabel}
+        </button>
+      )}
     </div>
-  ); 
+  );
 }
